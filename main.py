@@ -16,9 +16,32 @@ DIALOG_ID = "chat2024"
 previous_ctr = {}
 
 
+def get_wb_stats():
+    """Получаем статистику по артикулам из WB API"""
+    date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    headers = {
+        "Authorization": WB_API_TOKEN,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        resp = httpx.get(
+            f"https://statistics-api.wildberries.ru/api/v1/supplier/nm-report/detail?dateFrom={date_from}&dateTo={datetime.now().strftime('%Y-%m-%d')}",
+            headers=headers,
+            timeout=30
+        )
+        print(f"WB API ответ: {resp.status_code} {resp.text[:300]}")
+        return resp.json()
+    except Exception as e:
+        print(f"Ошибка WB API: {e}")
+        return None
+
+
 def get_wb_ctr():
-    today = datetime.now().strftime("%Y-%m-%d")
+    """Получаем CTR через nm-report"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
 
     headers = {
         "Authorization": WB_API_TOKEN,
@@ -26,6 +49,11 @@ def get_wb_ctr():
     }
 
     payload = {
+        "brandNames": [],
+        "objectIDs": [],
+        "tagIDs": [],
+        "nmIDs": [],
+        "timezone": "Europe/Moscow",
         "period": {
             "begin": yesterday,
             "end": today
@@ -39,12 +67,23 @@ def get_wb_ctr():
 
     try:
         resp = httpx.post(
-            "https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail/history",
+            "https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail",
             json=payload,
             headers=headers,
             timeout=30
         )
-        print(f"WB API ответ: {resp.status_code} {resp.text[:200]}")
+        print(f"WB nm-report ответ: {resp.status_code} {resp.text[:300]}")
+
+        if resp.status_code == 404:
+            # Пробуем альтернативный endpoint
+            resp2 = httpx.get(
+                f"https://statistics-api.wildberries.ru/api/v1/supplier/nm-report/detail?dateFrom={yesterday}&dateTo={today}",
+                headers=headers,
+                timeout=30
+            )
+            print(f"WB stats ответ: {resp2.status_code} {resp2.text[:300]}")
+            return resp2.json()
+
         return resp.json()
     except Exception as e:
         print(f"Ошибка WB API: {e}")
@@ -71,23 +110,26 @@ def check_ctr():
     if not data:
         return
 
-    cards = data.get("data", {}).get("cards", [])
+    # Пробуем разные структуры ответа
+    cards = (data.get("data", {}) or {}).get("cards", [])
     if not cards:
-        print(f"Нет карточек. Ответ: {json.dumps(data, ensure_ascii=False)[:300]}")
+        cards = data.get("cards", [])
+    if not cards:
+        print(f"Нет карточек. Полный ответ: {json.dumps(data, ensure_ascii=False)[:500]}")
         return
 
     alerts = []
 
     for card in cards:
-        nm_id = str(card.get("nmID", ""))
+        nm_id = str(card.get("nmID", card.get("nmId", "")))
         vendor_code = card.get("vendorCode", nm_id)
-        name = card.get("imtName", vendor_code)
+        name = card.get("imtName", card.get("name", vendor_code))
 
         statistics = card.get("statistics", {})
-        period_stats = statistics.get("selectedPeriod", {})
+        period_stats = statistics.get("selectedPeriod", statistics)
 
         open_card = period_stats.get("openCardCount", 0)
-        view_count = period_stats.get("searchResultSuperpositionCount", 0)
+        view_count = period_stats.get("searchResultSuperpositionCount", period_stats.get("viewCount", 0))
 
         if view_count > 0:
             current_ctr = round((open_card / view_count) * 100, 2)
