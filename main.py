@@ -31,8 +31,8 @@ def get_wb_ctr():
         "tagIDs": [],
         "nmIDs": [],
         "timezone": "Europe/Moscow",
-        "period": {
-            "begin": yesterday,
+        "selectedPeriod": {
+            "start": yesterday,
             "end": today
         },
         "orderBy": {
