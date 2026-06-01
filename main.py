@@ -39,7 +39,7 @@ def get_wb_ctr():
 
     try:
         resp = httpx.post(
-            "https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail",
+            "https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail/history",
             json=payload,
             headers=headers,
             timeout=30
