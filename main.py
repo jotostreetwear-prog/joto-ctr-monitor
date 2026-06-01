@@ -9,7 +9,7 @@ import threading
 
 app = Flask(__name__)
 
-WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "")
+WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 B24_WEBHOOK = os.environ.get("B24_WEBHOOK", "")
 DIALOG_ID = "chat2024"
 
@@ -21,7 +21,7 @@ def get_wb_ctr():
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     headers = {
-        "Authorization": WB_API_TOKEN,
+        "Authorization": f"Bearer {WB_API_TOKEN}",,
         "Content-Type": "application/json"
     }
 
