@@ -10,7 +10,7 @@ import threading
 app = Flask(__name__)
 
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
-B24_WEBHOOK = os.environ.get("B24_WEBHOOK", "")
+B24_WEBHOOK = os.environ.get("B24_WEBHOOK", "").strip()
 DIALOG_ID = "chat2024"
 
 previous_ctr = {}
@@ -21,7 +21,7 @@ def get_wb_ctr():
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     headers = {
-        "Authorization": f"Bearer {WB_API_TOKEN}",,
+        "Authorization": f"Bearer {WB_API_TOKEN}",
         "Content-Type": "application/json"
     }
 
@@ -96,21 +96,20 @@ def check_ctr():
 
         print(f"{vendor_code}: показы={view_count}, клики={open_card}, CTR={current_ctr}%")
 
-        # Уведомление если CTR снизился на 1% и более по сравнению с предыдущей проверкой
         if nm_id in previous_ctr:
             prev = previous_ctr[nm_id]
             drop = prev - current_ctr
             if drop >= 1.0:
                 alerts.append(
-                    f"📉 Артикул: {vendor_code}\n"
+                    f"Артикул: {vendor_code}\n"
                     f"Название: {name}\n"
-                    f"CTR: {prev}% → {current_ctr}% (снижение на {round(drop, 2)}%)"
+                    f"CTR: {prev}% -> {current_ctr}% (снижение на {round(drop, 2)}%)"
                 )
 
         previous_ctr[nm_id] = current_ctr
 
     if alerts:
-        message = "⚠️ Снижение CTR более чем на 1%\n\n" + "\n\n".join(alerts)
+        message = "Снижение CTR более чем на 1%\n\n" + "\n\n".join(alerts)
         send_b24_message(message)
         print(f"Отправлено {len(alerts)} уведомлений")
     else:
@@ -127,12 +126,11 @@ def run_scheduler():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "CTR Monitor работает ✓"
+    return "CTR Monitor работает"
 
 
 @app.route("/check-now", methods=["GET"])
 def check_now():
-    """Ручной запуск проверки"""
     threading.Thread(target=check_ctr, daemon=True).start()
     return jsonify({"ok": True, "message": "Проверка запущена"})
 
