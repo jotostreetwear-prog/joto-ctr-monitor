@@ -36,7 +36,7 @@ def get_wb_ctr():
             "end": today
         },
         "orderBy": {
-            "field": "openCardCount",
+            "field": "orderCount",
             "mode": "desc"
         },
         "page": 1
