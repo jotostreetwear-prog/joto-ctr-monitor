@@ -127,7 +127,7 @@ def check_ctr():
 
 
 def run_scheduler():
-    schedule.every().day.at("09:00").do(check_ctr)
+    schedule.every().day.at("06:00").do(check_ctr)
     print("Планировщик запущен — проверка каждый день в 09:00")
     while True:
         schedule.run_pending()
