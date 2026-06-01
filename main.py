@@ -21,7 +21,7 @@ def get_wb_ctr():
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     headers = {
-        "Authorization": f"Bearer {WB_API_TOKEN}",
+        "Authorization": WB_API_TOKEN,
         "Content-Type": "application/json"
     }
 
@@ -44,7 +44,7 @@ def get_wb_ctr():
             headers=headers,
             timeout=30
         )
-        print(f"WB API ответ: {resp.status_code}")
+        print(f"WB API ответ: {resp.status_code} {resp.text[:200]}")
         return resp.json()
     except Exception as e:
         print(f"Ошибка WB API: {e}")
