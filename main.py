@@ -16,30 +16,7 @@ DIALOG_ID = "chat2024"
 previous_ctr = {}
 
 
-def get_wb_stats():
-    """Получаем статистику по артикулам из WB API"""
-    date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    headers = {
-        "Authorization": WB_API_TOKEN,
-        "Content-Type": "application/json"
-    }
-
-    try:
-        resp = httpx.get(
-            f"https://statistics-api.wildberries.ru/api/v1/supplier/nm-report/detail?dateFrom={date_from}&dateTo={datetime.now().strftime('%Y-%m-%d')}",
-            headers=headers,
-            timeout=30
-        )
-        print(f"WB API ответ: {resp.status_code} {resp.text[:300]}")
-        return resp.json()
-    except Exception as e:
-        print(f"Ошибка WB API: {e}")
-        return None
-
-
 def get_wb_ctr():
-    """Получаем CTR через nm-report"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -67,23 +44,12 @@ def get_wb_ctr():
 
     try:
         resp = httpx.post(
-            "https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail",
+            "https://seller-analytics-api.wildberries.ru/api/analytics/v3/sales-funnel/products",
             json=payload,
             headers=headers,
             timeout=30
         )
-        print(f"WB nm-report ответ: {resp.status_code} {resp.text[:300]}")
-
-        if resp.status_code == 404:
-            # Пробуем альтернативный endpoint
-            resp2 = httpx.get(
-                f"https://statistics-api.wildberries.ru/api/v1/supplier/nm-report/detail?dateFrom={yesterday}&dateTo={today}",
-                headers=headers,
-                timeout=30
-            )
-            print(f"WB stats ответ: {resp2.status_code} {resp2.text[:300]}")
-            return resp2.json()
-
+        print(f"WB API ответ: {resp.status_code} {resp.text[:500]}")
         return resp.json()
     except Exception as e:
         print(f"Ошибка WB API: {e}")
@@ -110,26 +76,28 @@ def check_ctr():
     if not data:
         return
 
+    print(f"Полный ответ: {json.dumps(data, ensure_ascii=False)[:1000]}")
+
     # Пробуем разные структуры ответа
-    cards = (data.get("data", {}) or {}).get("cards", [])
-    if not cards:
-        cards = data.get("cards", [])
-    if not cards:
-        print(f"Нет карточек. Полный ответ: {json.dumps(data, ensure_ascii=False)[:500]}")
+    products = (data.get("data", {}) or {}).get("products", [])
+    if not products:
+        products = data.get("products", [])
+    if not products:
+        print("Нет данных о продуктах")
         return
 
     alerts = []
 
-    for card in cards:
-        nm_id = str(card.get("nmID", card.get("nmId", "")))
-        vendor_code = card.get("vendorCode", nm_id)
-        name = card.get("imtName", card.get("name", vendor_code))
+    for product in products:
+        nm_id = str(product.get("nmID", product.get("nmId", "")))
+        vendor_code = product.get("vendorCode", nm_id)
+        name = product.get("name", product.get("imtName", vendor_code))
 
-        statistics = card.get("statistics", {})
-        period_stats = statistics.get("selectedPeriod", statistics)
+        statistic = product.get("statistic", {})
+        selected = statistic.get("selected", statistic)
 
-        open_card = period_stats.get("openCardCount", 0)
-        view_count = period_stats.get("searchResultSuperpositionCount", period_stats.get("viewCount", 0))
+        open_card = selected.get("openCardCount", 0)
+        view_count = selected.get("searchResultSuperpositionCount", selected.get("viewCount", 0))
 
         if view_count > 0:
             current_ctr = round((open_card / view_count) * 100, 2)
