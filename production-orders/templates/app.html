@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Заказы на производство</title>
+  <script src="//api.bitrix24.com/api/v1/"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; padding: 16px; color: #2c3e50; background: #f4f6f8; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    button { cursor: pointer; border: none; border-radius: 6px; padding: 9px 16px; font-size: 14px; }
+    .btn-primary { background: #2f80ed; color: #fff; }
+    .btn-ghost { background: #fff; color: #2f80ed; border: 1px solid #2f80ed; }
+    .btn-ok { background: #27ae60; color: #fff; }
+    .btn-no { background: #eb5757; color: #fff; }
+    .card { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-grid label { display: flex; flex-direction: column; font-size: 13px; color: #5a6a7a; gap: 4px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    input, textarea { border: 1px solid #d8dee5; border-radius: 6px; padding: 8px 10px; font-size: 14px; font-family: inherit; }
+    textarea { resize: vertical; min-height: 60px; }
+    .hidden { display: none; }
+    .order { border-left: 4px solid #bdc3c7; }
+    .order.pending { border-left-color: #f2994a; }
+    .order.approved { border-left-color: #27ae60; }
+    .order.rejected { border-left-color: #eb5757; }
+    .order-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .order-title { font-weight: 600; font-size: 15px; }
+    .badge { font-size: 12px; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+    .badge.pending { background: #fff3e0; color: #e67e22; }
+    .badge.approved { background: #e8f5e9; color: #27ae60; }
+    .badge.rejected { background: #fdecea; color: #eb5757; }
+    .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px 16px; margin: 10px 0; font-size: 13px; }
+    .fields div span { color: #8a99a8; }
+    .order-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    a.link { color: #2f80ed; text-decoration: none; font-size: 13px; }
+    .muted { color: #8a99a8; font-size: 13px; }
+    #users-list div { padding: 4px 0; border-bottom: 1px solid #eef1f4; font-size: 14px; }
+    #users-list b { color: #2f80ed; }
+  </style>
+</head>
+<body>
+  <h1>📋 Заказы на производство</h1>
+
+  <div class="toolbar">
+    <button class="btn-primary" onclick="toggleForm()">+ Новый заказ</button>
+    <button class="btn-ghost" onclick="loadUsers()">ID сотрудников</button>
+  </div>
+
+  <div id="form-card" class="card hidden">
+    <form id="order-form" onsubmit="return createOrder(event)">
+      <div class="form-grid">
+        <label class="full">Наименование*<input name="name" required></label>
+        <label>Изготовитель<input name="manufacturer"></label>
+        <label>Размеры<input name="sizes"></label>
+        <label>Цвет<input name="color"></label>
+        <label>Количество<input name="quantity"></label>
+        <label>Стоимость<input name="cost" placeholder="например, 50000"></label>
+        <label>Сроки<input name="deadline" placeholder="например, до 20.07"></label>
+        <label class="full">Комментарий<textarea name="comment"></textarea></label>
+        <label class="full">Файл (макет/ТЗ)<input type="file" name="file"></label>
+      </div>
+      <div style="margin-top:14px; display:flex; gap:8px;">
+        <button type="submit" class="btn-primary">Отправить на согласование</button>
+        <button type="button" class="btn-ghost" onclick="toggleForm()">Отмена</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="users-card" class="card hidden">
+    <b>Сотрудники портала</b> — впишите нужные ID в переменные ALAN_USER_ID и MARINA_USER_ID на Railway.
+    <div id="users-list" style="margin-top:8px;">Загрузка…</div>
+  </div>
+
+  <div id="orders"></div>
+
+  <script>
+    const M = "{{ member_id }}";
+    const CURRENT_ID = "{{ current_id }}";
+    const CURRENT_NAME = "{{ current_name }}";
+    const IS_APPROVER = {{ 'true' if is_approver else 'false' }};
+
+    try { BX24.init(function () { BX24.resizeWindow && BX24.resizeWindow(document.body.scrollWidth, document.body.scrollHeight + 40); }); } catch (e) {}
+    function fit() { try { BX24.resizeWindow(document.body.scrollWidth, document.body.scrollHeight + 40); } catch (e) {} }
+
+    function esc(s) { return (s == null ? "" : String(s)).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+    function toggleForm() { document.getElementById("form-card").classList.toggle("hidden"); fit(); }
+
+    function createOrder(e) {
+      e.preventDefault();
+      const fd = new FormData(document.getElementById("order-form"));
+      fd.append("member_id", M);
+      fd.append("current_id", CURRENT_ID);
+      fd.append("current_name", CURRENT_NAME);
+      fetch("/api/create", { method: "POST", body: fd })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) { document.getElementById("order-form").reset(); toggleForm(); loadOrders(); }
+          else { alert(d.error || "Ошибка"); }
+        });
+      return false;
+    }
+
+    function act(url, id, extra) {
+      const fd = new FormData();
+      fd.append("member_id", M);
+      fd.append("id", id);
+      fd.append("current_id", CURRENT_ID);
+      if (extra) fd.append("reason", extra);
+      fetch(url, { method: "POST", body: fd })
+        .then(r => r.json())
+        .then(d => { if (!d.ok) alert(d.error || "Ошибка"); loadOrders(); });
+    }
+
+    function approve(id) { act("/api/approve", id); }
+    function reject(id) {
+      const reason = prompt("Причина отклонения (необязательно):", "");
+      if (reason === null) return;
+      act("/api/reject", id, reason);
+    }
+
+    function field(label, value) { return value ? `<div><span>${label}:</span> ${esc(value)}</div>` : ""; }
+
+    function renderOrder(o) {
+      const st = { pending: "На согласовании", approved: "Согласован", rejected: "Отклонён" }[o.status] || o.status;
+      let links = "";
+      if (o.has_file) links += `<a class="link" href="/file/${o.id}?member_id=${encodeURIComponent(M)}" target="_blank">📎 ${esc(o.file_name || "файл")}</a>`;
+      if (o.task_id && o.domain) links += ` <a class="link" href="https://${o.domain}/company/personal/user/0/tasks/task/view/${o.task_id}/" target="_blank">→ Задача</a>`;
+      if (o.deal_id && o.domain) links += ` <a class="link" href="https://${o.domain}/crm/deal/details/${o.deal_id}/" target="_blank">→ Сделка</a>`;
+
+      let actions = "";
+      if (o.status === "pending" && IS_APPROVER) {
+        actions = `<div class="order-actions">
+          <button class="btn-ok" onclick="approve(${o.id})">✓ Согласовать</button>
+          <button class="btn-no" onclick="reject(${o.id})">✗ Отклонить</button></div>`;
+      }
+      const rej = o.status === "rejected" && o.reject_reason ? `<div class="muted">Причина: ${esc(o.reject_reason)}</div>` : "";
+
+      return `<div class="card order ${o.status}">
+        <div class="order-head">
+          <div class="order-title">${esc(o.name)}</div>
+          <span class="badge ${o.status}">${st}</span>
+        </div>
+        <div class="fields">
+          ${field("Изготовитель", o.manufacturer)}
+          ${field("Размеры", o.sizes)}
+          ${field("Цвет", o.color)}
+          ${field("Кол-во", o.quantity)}
+          ${field("Стоимость", o.cost)}
+          ${field("Сроки", o.deadline)}
+        </div>
+        ${o.comment ? `<div class="muted">${esc(o.comment)}</div>` : ""}
+        <div style="margin:6px 0;">${links}</div>
+        ${rej}
+        <div class="muted">Заявку создал: ${esc(o.created_by_name) || "—"} · ${esc(o.created_at)}</div>
+        ${actions}
+      </div>`;
+    }
+
+    function loadOrders() {
+      fetch("/api/list?member_id=" + encodeURIComponent(M))
+        .then(r => r.json())
+        .then(list => {
+          const box = document.getElementById("orders");
+          box.innerHTML = list.length ? list.map(renderOrder).join("") :
+            '<div class="card muted">Заказов пока нет. Нажмите «Новый заказ».</div>';
+          fit();
+        });
+    }
+
+    function loadUsers() {
+      const card = document.getElementById("users-card");
+      card.classList.remove("hidden");
+      fetch("/api/users?member_id=" + encodeURIComponent(M))
+        .then(r => r.json())
+        .then(list => {
+          const box = document.getElementById("users-list");
+          if (list.error) { box.textContent = "Ошибка: " + list.error; return; }
+          box.innerHTML = list.map(u => `<div><b>${u.id}</b> — ${esc(u.name)}</div>`).join("");
+          fit();
+        });
+    }
+
+    loadOrders();
+  </script>
+</body>
+</html>

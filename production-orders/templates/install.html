@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Установка приложения</title>
+  <script src="//api.bitrix24.com/api/v1/"></script>
+  <style>
+    body { font-family: -apple-system, Arial, sans-serif; padding: 40px; text-align: center; color: #333; }
+    .ok { color: #2e7d32; } .err { color: #c62828; }
+  </style>
+</head>
+<body>
+  {% if ok %}
+    <h2 class="ok">✓ Приложение «Заказы на производство» установлено</h2>
+    <p>Пункт появился в левом меню портала. Можно закрыть это окно.</p>
+  {% else %}
+    <h2 class="err">Установка не завершена</h2>
+    <p>Проверьте права приложения (placement, im, tasks, crm, disk) и попробуйте переустановить.</p>
+  {% endif %}
+  <script>
+    try {
+      BX24.init(function () {
+        if (BX24.installFinish) { BX24.installFinish(); }
+      });
+    } catch (e) {}
+  </script>
+</body>
+</html>
