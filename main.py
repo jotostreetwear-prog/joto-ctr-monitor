@@ -20,12 +20,15 @@ BUDGET_THRESHOLD = int(os.environ.get("BUDGET_THRESHOLD", "100"))
 # ===================== БИТРИКС =====================
 
 def send_b24_message(dialog_id, text):
+    """Отправляет сообщение в Битрикс. Возвращает (status_code, тело_ответа)."""
     try:
         url = f"{B24_WEBHOOK}/im.message.add.json"
         resp = httpx.post(url, json={"DIALOG_ID": dialog_id, "MESSAGE": text}, timeout=10)
         print(f"Ответ Битрикс: {resp.status_code} {resp.text[:200]}")
+        return resp.status_code, resp.text
     except Exception as e:
         print(f"Ошибка отправки: {e}")
+        return None, str(e)
 
 # ===================== CTR МОНИТОРИНГ =====================
 
@@ -243,13 +246,20 @@ def check_budget_now():
 
 @app.route("/test-budget-notify", methods=["GET"])
 def test_budget_notify():
-    send_b24_message(
-        TATIANA_USER_ID,
+    # DIALOG_ID можно переопределить в URL: /test-budget-notify?to=232
+    dialog_id = request.args.get("to", TATIANA_USER_ID)
+    status, body = send_b24_message(
+        dialog_id,
         "✅ Тест: уведомления о бюджете рекламных кампаний подключены. "
         "Сюда будут приходить сообщения, когда остаток бюджета кампании станет меньше "
         f"{BUDGET_THRESHOLD} ₽.",
     )
-    return jsonify({"ok": True, "message": f"Тестовое сообщение отправлено (ID {TATIANA_USER_ID})"})
+    return jsonify({
+        "ok": status == 200,
+        "dialog_id": dialog_id,
+        "bitrix_status": status,
+        "bitrix_response": body,
+    })
 
 # ===================== ЗАПУСК =====================
 
