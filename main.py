@@ -170,8 +170,8 @@ def check_ctr():
 
     if alerts:
         msg = "📉 *Снижение CTR на Wildberries:*\n\n" + "\n".join(alerts)
-        send_b24_message("chat2024", msg)
-        print(f"Отправлено {len(alerts)} уведомлений")
+        send_b24_message(TATIANA_USER_ID, msg, from_bot=True)
+        print(f"Отправлено {len(alerts)} уведомлений Татьяне")
     else:
         print("Снижений CTR >= 1% не найдено")
 
@@ -286,8 +286,17 @@ def index():
 
 @app.route("/test-notify", methods=["GET"])
 def test_notify():
-    send_b24_message("chat2024", "✅ Тест: CTR монитор работает и подключён к этому чату!")
-    return jsonify({"ok": True, "message": "Тестовое уведомление отправлено"})
+    status, body = send_b24_message(
+        TATIANA_USER_ID,
+        "✅ Тест: CTR-монитор работает. Сюда будут приходить уведомления о снижении CTR по артикулам.",
+        from_bot=True,
+    )
+    return jsonify({
+        "ok": status == 200,
+        "dialog_id": TATIANA_USER_ID,
+        "bitrix_status": status,
+        "bitrix_response": body,
+    })
 
 @app.route("/check-now", methods=["GET"])
 def check_now():
