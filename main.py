@@ -12,15 +12,23 @@ app = Flask(__name__)
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 B24_WEBHOOK = os.environ.get("B24_WEBHOOK", "").strip()
 
+# ID пользователя Татьяны в Битрикс24 — для личных уведомлений о бюджете кампаний
+TATIANA_USER_ID = os.environ.get("TATIANA_USER_ID", "232").strip()
+# Порог остатка бюджета (₽), ниже которого шлём уведомление
+BUDGET_THRESHOLD = int(os.environ.get("BUDGET_THRESHOLD", "100"))
+
 # ===================== БИТРИКС =====================
 
 def send_b24_message(dialog_id, text):
+    """Отправляет сообщение в Битрикс. Возвращает (status_code, тело_ответа)."""
     try:
         url = f"{B24_WEBHOOK}/im.message.add.json"
         resp = httpx.post(url, json={"DIALOG_ID": dialog_id, "MESSAGE": text}, timeout=10)
         print(f"Ответ Битрикс: {resp.status_code} {resp.text[:200]}")
+        return resp.status_code, resp.text
     except Exception as e:
         print(f"Ошибка отправки: {e}")
+        return None, str(e)
 
 # ===================== CTR МОНИТОРИНГ =====================
 
@@ -112,6 +120,109 @@ def check_ctr():
     else:
         print("Снижений CTR >= 1% не найдено")
 
+# ===================== БЮДЖЕТ РЕКЛАМНЫХ КАМПАНИЙ =====================
+
+ADV_API_BASE = "https://advert-api.wildberries.ru"
+
+def get_active_adverts():
+    """Возвращает список активных кампаний: [{"id": advertId, "name": название}]."""
+    headers = {"Authorization": WB_API_TOKEN}
+
+    # 1. Список кампаний, сгруппированных по типу и статусу
+    try:
+        resp = httpx.get(f"{ADV_API_BASE}/adv/v1/promotion/count", headers=headers, timeout=30)
+        print(f"WB Adv count статус: {resp.status_code}")
+        if resp.status_code != 200:
+            print(f"WB Adv count ошибка: {resp.text[:300]}")
+            return []
+        groups = resp.json().get("adverts") or []
+    except Exception as e:
+        print(f"Ошибка WB Adv count: {e}")
+        return []
+
+    # Собираем id кампаний со статусом 9 (идут показы)
+    advert_ids = []
+    for group in groups:
+        if group.get("status") != 9:
+            continue
+        for adv in group.get("advert_list") or []:
+            adv_id = adv.get("advertId")
+            if adv_id:
+                advert_ids.append(adv_id)
+
+    if not advert_ids:
+        print("Активных кампаний не найдено")
+        return []
+
+    # 2. Названия кампаний (POST принимает не более 50 id за раз)
+    names = {}
+    for i in range(0, len(advert_ids), 50):
+        chunk = advert_ids[i:i + 50]
+        try:
+            resp = httpx.post(
+                f"{ADV_API_BASE}/adv/v1/promotion/adverts",
+                headers=headers, json=chunk, timeout=30,
+            )
+            if resp.status_code == 200:
+                for adv in resp.json() or []:
+                    names[adv.get("advertId")] = adv.get("name") or str(adv.get("advertId"))
+            else:
+                print(f"WB Adv adverts ошибка: {resp.status_code} {resp.text[:200]}")
+        except Exception as e:
+            print(f"Ошибка WB Adv adverts: {e}")
+
+    return [{"id": adv_id, "name": names.get(adv_id, str(adv_id))} for adv_id in advert_ids]
+
+def get_advert_budget(advert_id):
+    """Остаток бюджета кампании в рублях, либо None при ошибке."""
+    headers = {"Authorization": WB_API_TOKEN}
+    try:
+        resp = httpx.get(
+            f"{ADV_API_BASE}/adv/v1/budget",
+            headers=headers, params={"id": advert_id}, timeout=30,
+        )
+        if resp.status_code != 200:
+            print(f"WB Adv budget {advert_id} ошибка: {resp.status_code} {resp.text[:200]}")
+            return None
+        return resp.json().get("total")
+    except Exception as e:
+        print(f"Ошибка WB Adv budget {advert_id}: {e}")
+        return None
+
+def check_budgets():
+    print(f"Проверка бюджетов: {datetime.now()}")
+
+    if not WB_API_TOKEN or not B24_WEBHOOK:
+        print("Нет токенов")
+        return
+
+    if not TATIANA_USER_ID:
+        print("Не задан TATIANA_USER_ID — некуда слать уведомление о бюджете")
+        return
+
+    adverts = get_active_adverts()
+    if not adverts:
+        print("Нет активных кампаний для проверки бюджета")
+        return
+
+    alerts = []
+    for adv in adverts:
+        budget = get_advert_budget(adv["id"])
+        print(f"Кампания {adv['name']} (ID {adv['id']}): бюджет={budget} ₽")
+        if budget is not None and budget < BUDGET_THRESHOLD:
+            alerts.append(
+                f"🔴 Рекламная кампания «{adv['name']}» (ID {adv['id']}): "
+                f"остаток бюджета {budget} ₽ — срочное пополнение бюджета!"
+            )
+        time.sleep(0.5)  # бережём лимиты WB API
+
+    if alerts:
+        msg = "💰 *Низкий бюджет рекламных кампаний WB:*\n\n" + "\n".join(alerts)
+        send_b24_message(TATIANA_USER_ID, msg)
+        print(f"Отправлено {len(alerts)} уведомлений Татьяне")
+    else:
+        print(f"Кампаний с бюджетом ниже {BUDGET_THRESHOLD} ₽ не найдено")
+
 # ===================== FLASK =====================
 
 @app.route("/", methods=["GET"])
@@ -128,11 +239,35 @@ def check_now():
     threading.Thread(target=check_ctr).start()
     return jsonify({"ok": True, "message": "CTR проверка запущена"})
 
+@app.route("/check-budget-now", methods=["GET"])
+def check_budget_now():
+    threading.Thread(target=check_budgets).start()
+    return jsonify({"ok": True, "message": "Проверка бюджетов запущена"})
+
+@app.route("/test-budget-notify", methods=["GET"])
+def test_budget_notify():
+    # DIALOG_ID можно переопределить в URL: /test-budget-notify?to=232
+    dialog_id = request.args.get("to", TATIANA_USER_ID)
+    status, body = send_b24_message(
+        dialog_id,
+        "✅ Тест: уведомления о бюджете рекламных кампаний подключены. "
+        "Сюда будут приходить сообщения, когда остаток бюджета кампании станет меньше "
+        f"{BUDGET_THRESHOLD} ₽.",
+    )
+    return jsonify({
+        "ok": status == 200,
+        "dialog_id": dialog_id,
+        "bitrix_status": status,
+        "bitrix_response": body,
+    })
+
 # ===================== ЗАПУСК =====================
 
 def run_scheduler():
     schedule.every().day.at("06:00").do(check_ctr)
-    print("Планировщик запущен — проверка каждый день в 09:00 МСК")
+    # Проверка остатка бюджета кампаний каждый час
+    schedule.every().hour.do(check_budgets)
+    print("Планировщик запущен — CTR каждый день в 09:00 МСК, бюджет — каждый час")
     while True:
         schedule.run_pending()
         time.sleep(60)
