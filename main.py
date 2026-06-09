@@ -369,9 +369,9 @@ def debug_bitrix():
 
 def run_scheduler():
     schedule.every().day.at("06:00").do(check_ctr)
-    # Проверка остатка бюджета кампаний каждый час
-    schedule.every().hour.do(check_budgets)
-    print("Планировщик запущен — CTR каждый день в 09:00 МСК, бюджет — каждый час")
+    # Проверка остатка бюджета кампаний каждые полчаса
+    schedule.every(30).minutes.do(check_budgets)
+    print("Планировщик запущен — CTR каждый день в 09:00 МСК, бюджет — каждые 30 минут")
     while True:
         schedule.run_pending()
         time.sleep(60)
