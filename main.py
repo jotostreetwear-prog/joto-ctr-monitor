@@ -10,7 +10,23 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
-B24_WEBHOOK = os.environ.get("B24_WEBHOOK", "").strip()
+
+
+def _normalize_webhook(url):
+    """Приводит URL вебхука к базовому виду .../rest/<id>/<токен>.
+
+    Отрезает случайно скопированный с конца метод (например /profile.json),
+    из-за которого все REST-запросы ломаются с ERROR_METHOD_NOT_FOUND.
+    """
+    url = url.strip().rstrip("/")
+    last = url.rsplit("/", 1)[-1] if "/" in url else ""
+    # токен вебхука не содержит точки, а метод (profile.json) — содержит
+    if "." in last:
+        url = url.rsplit("/", 1)[0]
+    return url
+
+
+B24_WEBHOOK = _normalize_webhook(os.environ.get("B24_WEBHOOK", ""))
 
 # ID пользователя Татьяны в Битрикс24 — для личных уведомлений о бюджете кампаний
 TATIANA_USER_ID = os.environ.get("TATIANA_USER_ID", "232").strip()
