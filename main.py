@@ -16,18 +16,57 @@ B24_WEBHOOK = os.environ.get("B24_WEBHOOK", "").strip()
 TATIANA_USER_ID = os.environ.get("TATIANA_USER_ID", "232").strip()
 # Порог остатка бюджета (₽), ниже которого шлём уведомление
 BUDGET_THRESHOLD = int(os.environ.get("BUDGET_THRESHOLD", "100"))
+# ID чат-бота в Битрикс24 — если задан, сообщения шлются от имени бота
+B24_BOT_ID = os.environ.get("B24_BOT_ID", "").strip()
 
 # ===================== БИТРИКС =====================
 
-def send_b24_message(dialog_id, text):
-    """Отправляет сообщение в Битрикс. Возвращает (status_code, тело_ответа)."""
+def send_b24_message(dialog_id, text, from_bot=False):
+    """Отправляет сообщение в Битрикс. Возвращает (status_code, тело_ответа).
+
+    from_bot=True и заданный B24_BOT_ID — сообщение уходит от имени бота
+    (imbot.message.add), иначе от имени владельца вебхука (im.message.add).
+    """
     try:
-        url = f"{B24_WEBHOOK}/im.message.add.json"
-        resp = httpx.post(url, json={"DIALOG_ID": dialog_id, "MESSAGE": text}, timeout=10)
+        if from_bot and B24_BOT_ID:
+            url = f"{B24_WEBHOOK}/imbot.message.add.json"
+            payload = {"BOT_ID": B24_BOT_ID, "DIALOG_ID": dialog_id, "MESSAGE": text}
+        else:
+            url = f"{B24_WEBHOOK}/im.message.add.json"
+            payload = {"DIALOG_ID": dialog_id, "MESSAGE": text}
+        resp = httpx.post(url, json=payload, timeout=10)
         print(f"Ответ Битрикс: {resp.status_code} {resp.text[:200]}")
         return resp.status_code, resp.text
     except Exception as e:
         print(f"Ошибка отправки: {e}")
+        return None, str(e)
+
+def register_b24_bot():
+    """Регистрирует чат-бота в Битрикс24. Возвращает (status_code, тело_ответа).
+
+    В теле ответа поле result — это BOT_ID, который нужно прописать
+    в переменную окружения B24_BOT_ID.
+    """
+    try:
+        url = f"{B24_WEBHOOK}/imbot.register.json"
+        payload = {
+            "CODE": "joto_wb_monitor",
+            "TYPE": "B",
+            "EVENT_MESSAGE_ADD": "",
+            "EVENT_WELCOME_MESSAGE": "",
+            "EVENT_BOT_DELETE": "",
+            "OPENLINE": "N",
+            "PROPERTIES": {
+                "NAME": "JOTO Монитор",
+                "COLOR": "AZURE",
+                "WORK_POSITION": "Реклама и CTR Wildberries",
+            },
+        }
+        resp = httpx.post(url, json=payload, timeout=10)
+        print(f"Регистрация бота: {resp.status_code} {resp.text[:300]}")
+        return resp.status_code, resp.text
+    except Exception as e:
+        print(f"Ошибка регистрации бота: {e}")
         return None, str(e)
 
 # ===================== CTR МОНИТОРИНГ =====================
@@ -218,7 +257,7 @@ def check_budgets():
 
     if alerts:
         msg = "💰 *Низкий бюджет рекламных кампаний WB:*\n\n" + "\n".join(alerts)
-        send_b24_message(TATIANA_USER_ID, msg)
+        send_b24_message(TATIANA_USER_ID, msg, from_bot=True)
         print(f"Отправлено {len(alerts)} уведомлений Татьяне")
     else:
         print(f"Кампаний с бюджетом ниже {BUDGET_THRESHOLD} ₽ не найдено")
@@ -253,12 +292,24 @@ def test_budget_notify():
         "✅ Тест: уведомления о бюджете рекламных кампаний подключены. "
         "Сюда будут приходить сообщения, когда остаток бюджета кампании станет меньше "
         f"{BUDGET_THRESHOLD} ₽.",
+        from_bot=True,
     )
     return jsonify({
         "ok": status == 200,
         "dialog_id": dialog_id,
+        "from_bot": bool(B24_BOT_ID),
         "bitrix_status": status,
         "bitrix_response": body,
+    })
+
+@app.route("/register-bot", methods=["GET"])
+def register_bot():
+    status, body = register_b24_bot()
+    return jsonify({
+        "ok": status == 200,
+        "bitrix_status": status,
+        "bitrix_response": body,
+        "hint": "Возьмите число из поля result и пропишите его в переменную окружения B24_BOT_ID на Railway",
     })
 
 # ===================== ЗАПУСК =====================
