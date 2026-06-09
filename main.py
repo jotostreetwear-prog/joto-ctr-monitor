@@ -13,7 +13,7 @@ WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 B24_WEBHOOK = os.environ.get("B24_WEBHOOK", "").strip()
 
 # ID пользователя Татьяны в Битрикс24 — для личных уведомлений о бюджете кампаний
-TATIANA_USER_ID = os.environ.get("TATIANA_USER_ID", "").strip()
+TATIANA_USER_ID = os.environ.get("TATIANA_USER_ID", "232").strip()
 # Порог остатка бюджета (₽), ниже которого шлём уведомление
 BUDGET_THRESHOLD = int(os.environ.get("BUDGET_THRESHOLD", "100"))
 
