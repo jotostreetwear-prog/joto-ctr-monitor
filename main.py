@@ -312,6 +312,34 @@ def register_bot():
         "hint": "Возьмите число из поля result и пропишите его в переменную окружения B24_BOT_ID на Railway",
     })
 
+@app.route("/debug-bitrix", methods=["GET"])
+def debug_bitrix():
+    """Диагностика: какой вебхук используется, чей аккаунт и какие у него права."""
+    # маскируем токен в URL вебхука (оставляем домен и id пользователя)
+    masked = B24_WEBHOOK
+    parts = B24_WEBHOOK.rstrip("/").split("/")
+    if len(parts) >= 1:
+        parts[-1] = "***токен***"
+        masked = "/".join(parts)
+
+    out = {"webhook_url": masked, "bot_id_env": B24_BOT_ID or "(не задан)"}
+
+    # profile — чей это аккаунт
+    try:
+        r = httpx.get(f"{B24_WEBHOOK}/profile.json", timeout=10)
+        out["profile"] = r.json()
+    except Exception as e:
+        out["profile_error"] = str(e)
+
+    # scope — какие права у вебхука (ищем "im")
+    try:
+        r = httpx.get(f"{B24_WEBHOOK}/scope.json", timeout=10)
+        out["scope"] = r.json()
+    except Exception as e:
+        out["scope_error"] = str(e)
+
+    return jsonify(out)
+
 # ===================== ЗАПУСК =====================
 
 def run_scheduler():
