@@ -24,8 +24,8 @@
 | `B24_CLIENT_ID` | client_id приложения из Битрикс24 |
 | `B24_CLIENT_SECRET` | client_secret приложения из Битрикс24 |
 | `APP_BASE_URL` | публичный адрес сервиса, напр. `https://joto-production-orders.up.railway.app` |
-| `ALAN_USER_ID` | ID Алана в Битрикс24 (кто согласовывает) |
-| `MARINA_USER_ID` | ID Марины Ваниной (кому падает задача) |
+| `ALAN_USER_ID` | ID Алана (кто согласовывает) — по умолчанию `1` |
+| `MARINA_USER_ID` | ID Марины Ваниной (кому падает задача) — по умолчанию `220` |
 | `DEAL_CATEGORY_ID` | (необязательно) ID воронки CRM для сделок |
 | `SECRET_KEY` | любая случайная строка |
 

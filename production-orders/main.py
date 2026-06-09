@@ -23,8 +23,8 @@ db = SQLAlchemy(app)
 # ---- Конфигурация (переменные окружения на Railway) ----
 B24_CLIENT_ID = os.environ.get("B24_CLIENT_ID", "").strip()          # client_id приложения Битрикс
 B24_CLIENT_SECRET = os.environ.get("B24_CLIENT_SECRET", "").strip()  # client_secret приложения Битрикс
-ALAN_USER_ID = os.environ.get("ALAN_USER_ID", "").strip()            # кто СОГЛАСОВЫВАЕТ заказы (Алан)
-MARINA_USER_ID = os.environ.get("MARINA_USER_ID", "").strip()        # кому ПАДАЕТ задача (Марина Ванина)
+ALAN_USER_ID = os.environ.get("ALAN_USER_ID", "1").strip()           # кто СОГЛАСОВЫВАЕТ заказы (Алан)
+MARINA_USER_ID = os.environ.get("MARINA_USER_ID", "220").strip()     # кому ПАДАЕТ задача (Марина Ванина)
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")  # публичный адрес на Railway
 DEAL_CATEGORY_ID = os.environ.get("DEAL_CATEGORY_ID", "").strip()    # ID воронки CRM (опционально)
 
