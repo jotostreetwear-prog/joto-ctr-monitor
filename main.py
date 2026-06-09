@@ -241,6 +241,16 @@ def check_budget_now():
     threading.Thread(target=check_budgets).start()
     return jsonify({"ok": True, "message": "Проверка бюджетов запущена"})
 
+@app.route("/test-budget-notify", methods=["GET"])
+def test_budget_notify():
+    send_b24_message(
+        TATIANA_USER_ID,
+        "✅ Тест: уведомления о бюджете рекламных кампаний подключены. "
+        "Сюда будут приходить сообщения, когда остаток бюджета кампании станет меньше "
+        f"{BUDGET_THRESHOLD} ₽.",
+    )
+    return jsonify({"ok": True, "message": f"Тестовое сообщение отправлено (ID {TATIANA_USER_ID})"})
+
 # ===================== ЗАПУСК =====================
 
 def run_scheduler():
