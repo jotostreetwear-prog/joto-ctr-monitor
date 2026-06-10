@@ -10,11 +10,13 @@ API: сертификаты и «Рекомендации продавца».
 
 import httpx
 
-CARD_DETAIL = "https://card.wb.ru/cards/v2/detail"
-# Эндпоинт «Рекомендации продавца» (similar/recommended товары продавца)
-SELLER_RECOM = "https://recom.wb.ru/recom/recommended"
+# v2 отключён WB (404 с дек.2025) — рабочий публичный эндпоинт цены/рейтинга — v4
+CARD_DETAIL = "https://card.wb.ru/cards/v4/detail"
 
 _UA = {"User-Agent": "Mozilla/5.0 (compatible; JOTO-checklist/1.0)"}
+
+# Кэш найденного basket-хоста по vol (чтобы не сканировать повторно)
+_basket_cache = {}
 
 
 def _basket_host(nm_id):
@@ -33,27 +35,41 @@ def _basket_host(nm_id):
 
 
 def fetch_card_json(nm_id):
-    """Сырой публичный card.json карточки (описание, опции, иногда сертификат)."""
+    """Сырой публичный card.json. Хост ищем перебором, если расчётный не подошёл
+    (для «высоких» артикулов таблица хостов устаревает)."""
     vol = nm_id // 100000
     part = nm_id // 1000
-    host = _basket_host(nm_id)
-    url = f"https://{host}/vol{vol}/part{part}/{nm_id}/info/ru/card.json"
-    try:
-        r = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
-        if r.status_code == 200:
-            return r.json()
-        print(f"WB public card.json {nm_id} -> {r.status_code}")
-    except Exception as e:
-        print(f"WB public card.json {nm_id} ошибка: {e}")
+
+    # порядок хостов: из кэша → расчётный → полный перебор
+    hosts = []
+    if vol in _basket_cache:
+        hosts.append(_basket_cache[vol])
+    hosts.append(_basket_host(nm_id))
+    hosts += [f"basket-{n:02d}.wbbasket.ru" for n in range(1, 46)]
+
+    seen = set()
+    for host in hosts:
+        if host in seen:
+            continue
+        seen.add(host)
+        url = f"https://{host}/vol{vol}/part{part}/{nm_id}/info/ru/card.json"
+        try:
+            r = httpx.get(url, headers=_UA, timeout=12, follow_redirects=True)
+            if r.status_code == 200:
+                _basket_cache[vol] = host
+                return r.json()
+        except Exception:
+            continue
+    print(f"WB public card.json {nm_id} -> не найден ни на одном basket-хосте")
     return None
 
 
 def fetch_detail(nm_id):
-    """Публичная витрина карточки (card.wb.ru): рейтинг, отзывы и пр."""
+    """Публичная витрина карточки (card.wb.ru v4): цена, рейтинг, отзывы."""
     try:
         r = httpx.get(
             CARD_DETAIL,
-            params={"appType": 1, "curr": "rub", "dest": -1257786, "nm": nm_id},
+            params={"appType": 1, "curr": "rub", "dest": -1257786, "spp": 30, "nm": nm_id},
             headers=_UA, timeout=20, follow_redirects=True,
         )
         if r.status_code == 200:
@@ -84,23 +100,11 @@ def _has_certificate(card_json):
     return False
 
 
-def _has_seller_recommendations(nm_id):
-    """True/False/None — есть ли блок «Рекомендации продавца»."""
-    try:
-        r = httpx.get(
-            SELLER_RECOM, params={"nm": nm_id},
-            headers=_UA, timeout=20, follow_redirects=True,
-        )
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        # структура может отличаться — считаем рекомендации найденными,
-        # если в ответе есть непустой список товаров
-        products = (data.get("data") or {}).get("products") or data.get("products") or []
-        return len(products) > 0
-    except Exception as e:
-        print(f"WB public recom {nm_id} ошибка: {e}")
+def _seller_recommendations(cj):
+    """True/False — есть ли блок «Рекомендации продавца» (поле card.json)."""
+    if not isinstance(cj, dict) or "has_seller_recommendations" not in cj:
         return None
+    return bool(cj.get("has_seller_recommendations"))
 
 
 def _has_size_grid(cj):
@@ -116,25 +120,24 @@ def _has_size_grid(cj):
 
 
 def get_public_signals(nm_id):
-    """Сигналы из публичной карточки WB: rich_content и наличие размерной сетки.
-
-    Рекомендации и сертификаты через публичный API надёжно не достаются —
-    они вынесены в ручные отметки, поэтому здесь их нет.
-    """
+    """Сигналы из публичной карточки WB: рич-контент, размерная сетка,
+    рекомендации продавца (всё — из card.json)."""
     cj = fetch_card_json(nm_id)
     rich = cj.get("has_rich") if isinstance(cj, dict) and "has_rich" in cj else None
     return {
         "rich_content": rich,
         "grid_4th": _has_size_grid(cj),
+        "recommendations": _seller_recommendations(cj),
     }
 
 
 def debug_dump(nm_id):
     """Сырые публичные ответы по артикулу — для донастройки селекторов."""
+    cj = fetch_card_json(nm_id)
     return {
         "nm_id": nm_id,
         "basket_host": _basket_host(nm_id),
-        "card_json": fetch_card_json(nm_id),
+        "card_json": cj,
         "detail": fetch_detail(nm_id),
-        "recom_signal": _has_seller_recommendations(nm_id),
+        "recommendations": _seller_recommendations(cj),
     }
