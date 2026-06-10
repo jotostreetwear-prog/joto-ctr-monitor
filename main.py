@@ -318,8 +318,9 @@ def notify_checklist(force_compute=False):
     print(f"Чек-лист: сводка отправлена Татьяне ({len(worst)} с недочётами)")
 
 
-@app.route("/checklist", methods=["GET"])
+@app.route("/checklist", methods=["GET", "POST"])
 def checklist_page():
+    # POST приходит, когда страница открыта как приложение в Битрикс24 (iframe)
     return render_template("checklist.html")
 
 
@@ -354,6 +355,12 @@ def checklist_override():
 def checklist_notify_now():
     threading.Thread(target=notify_checklist, kwargs={"force_compute": True}, daemon=True).start()
     return jsonify({"ok": True, "message": "Сводка чек-листа будет отправлена Татьяне"})
+
+
+@app.route("/checklist/debug", methods=["GET"])
+def checklist_debug():
+    """Диагностика доступа WB_API_TOKEN к Контенту/Ценам/Отзывам."""
+    return jsonify(checklist.diagnose())
 
 
 @app.route("/checklist/debug-public", methods=["GET"])

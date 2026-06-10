@@ -350,3 +350,59 @@ def is_computing():
 
 def metrics_meta():
     return [{"key": k, "label": label, "kind": kind} for k, label, kind in METRICS]
+
+
+def diagnose():
+    """Проверяет доступ токена к нужным WB API и возвращает коды ответов.
+
+    Помогает понять, каких скоупов не хватает у WB_API_TOKEN
+    (Контент / Цены / Отзывы), если чек-лист пустой.
+    """
+    headers = {"Authorization": WB_API_TOKEN}
+    out = {"token_set": bool(WB_API_TOKEN), "token_len": len(WB_API_TOKEN)}
+
+    # Контент — карточки
+    try:
+        r = httpx.post(
+            f"{CONTENT_API}/content/v2/get/cards/list",
+            headers=headers,
+            json={"settings": {"cursor": {"limit": 10}, "filter": {"withPhoto": -1}}},
+            timeout=30,
+        )
+        out["content_status"] = r.status_code
+        if r.status_code == 200:
+            cards = r.json().get("cards") or []
+            out["content_cards"] = len(cards)
+            out["content_sample"] = [
+                {"nmID": c.get("nmID"), "vendorCode": c.get("vendorCode")} for c in cards[:3]
+            ]
+        else:
+            out["content_error"] = r.text[:300]
+    except Exception as e:
+        out["content_exc"] = str(e)
+
+    # Цены
+    try:
+        r = httpx.get(
+            f"{PRICES_API}/api/v2/list/goods/filter",
+            headers=headers, params={"limit": 10, "offset": 0}, timeout=30,
+        )
+        out["prices_status"] = r.status_code
+        if r.status_code != 200:
+            out["prices_error"] = r.text[:200]
+    except Exception as e:
+        out["prices_exc"] = str(e)
+
+    # Отзывы
+    try:
+        r = httpx.get(
+            f"{FEEDBACKS_API}/api/v1/feedbacks",
+            headers=headers, params={"isAnswered": "true", "take": 10, "skip": 0}, timeout=30,
+        )
+        out["feedbacks_status"] = r.status_code
+        if r.status_code != 200:
+            out["feedbacks_error"] = r.text[:200]
+    except Exception as e:
+        out["feedbacks_exc"] = str(e)
+
+    return out
