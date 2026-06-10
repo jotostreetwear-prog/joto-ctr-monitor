@@ -18,6 +18,9 @@ import vision
 import wb_public
 
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
+# Отдельный токен для цен (категория «Цены и скидки»). Если не задан —
+# используем общий WB_API_TOKEN.
+WB_PRICES_TOKEN = os.environ.get("WB_PRICES_TOKEN", "").strip() or WB_API_TOKEN
 
 CONTENT_API = "https://content-api.wildberries.ru"
 PRICES_API = "https://discounts-prices-api.wildberries.ru"
@@ -148,7 +151,7 @@ def _fetch_cards():
 
 def _fetch_prices():
     """nmID -> цена со скидкой (или базовая). Пусто при ошибке/нет скоупа."""
-    headers = {"Authorization": WB_API_TOKEN}
+    headers = {"Authorization": WB_PRICES_TOKEN}
     prices = {}
     offset = 0
     while True:
@@ -434,10 +437,13 @@ def diagnose():
         out["content_exc"] = str(e)
 
     # Цены — статус + сырой пример товара (ищем поле блокировки акций)
+    out["prices_token_len"] = len(WB_PRICES_TOKEN)
+    out["prices_token_separate"] = WB_PRICES_TOKEN != WB_API_TOKEN
     try:
         r = httpx.get(
             f"{PRICES_API}/api/v2/list/goods/filter",
-            headers=headers, params={"limit": 10, "offset": 0}, timeout=30,
+            headers={"Authorization": WB_PRICES_TOKEN},
+            params={"limit": 10, "offset": 0}, timeout=30,
         )
         out["prices_status"] = r.status_code
         if r.status_code == 200:
