@@ -371,6 +371,12 @@ def checklist_debug():
     return jsonify(checklist.diagnose())
 
 
+@app.route("/checklist/debug-card", methods=["GET"])
+def checklist_debug_card():
+    """Сырая первая карточка Content API — для сверки имён полей (фото, видео)."""
+    return jsonify(checklist.debug_first_card())
+
+
 @app.route("/checklist/debug-public", methods=["GET"])
 def checklist_debug_public():
     """Сырые публичные ответы WB по артикулу — для донастройки парсинга."""

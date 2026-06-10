@@ -103,18 +103,29 @@ def _has_seller_recommendations(nm_id):
         return None
 
 
-def get_public_signals(nm_id):
-    """{certificates: bool|None, rich_content: bool|None} по публичным данным.
+def _has_size_grid(cj):
+    """True/False — заполнена ли в карточке размерная сетка (sizes_table)."""
+    if not isinstance(cj, dict):
+        return None
+    st = cj.get("sizes_table") or {}
+    for row in st.get("values") or []:
+        # есть хотя бы одна строка с заполненными деталями (обхваты/размеры)
+        if any((str(d).strip() for d in (row.get("details") or []))):
+            return True
+    return False
 
-    rich_content берём из точного поля has_rich публичной карточки.
-    Рекомендации продавца через публичный API надёжно не достаются — вынесены
-    в ручную отметку, поэтому здесь их нет.
+
+def get_public_signals(nm_id):
+    """Сигналы из публичной карточки WB: rich_content и наличие размерной сетки.
+
+    Рекомендации и сертификаты через публичный API надёжно не достаются —
+    они вынесены в ручные отметки, поэтому здесь их нет.
     """
     cj = fetch_card_json(nm_id)
     rich = cj.get("has_rich") if isinstance(cj, dict) and "has_rich" in cj else None
     return {
-        "certificates": _has_certificate(cj),
         "rich_content": rich,
+        "grid_4th": _has_size_grid(cj),
     }
 
 

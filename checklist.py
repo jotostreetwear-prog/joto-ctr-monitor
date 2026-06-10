@@ -27,6 +27,12 @@ CHARS_THRESHOLD = int(os.environ.get("CHECKLIST_CHARS_MIN", "10"))
 # Минимальный рейтинг для «зелёной» метрики
 RATING_MIN = float(os.environ.get("CHECKLIST_RATING_MIN", "4.5"))
 
+# СЕО считается «зелёным» по наличию заголовка и описания (а не по длине —
+# короткие заголовки часто делают намеренно, чтобы не цеплять лишние ключи).
+# При желании пороги можно поднять через переменные окружения.
+SEO_TITLE_MIN = int(os.environ.get("CHECKLIST_SEO_TITLE_MIN", "1"))
+SEO_DESC_MIN = int(os.environ.get("CHECKLIST_SEO_DESC_MIN", "1"))
+
 # Префиксы артикулов, которые считаем тестовыми и не показываем в чек-листе
 TEST_PREFIXES = tuple(
     p.strip().lower()
@@ -39,7 +45,6 @@ OVERRIDES_PATH = os.environ.get("CHECKLIST_OVERRIDES", "overrides.json")
 
 # Определение метрик: (ключ, подпись, источник)
 #   auto   — считается из официального WB API
-#   vision — определяется анализом фото через Claude Vision
 #   parse  — парсится из публичной карточки WB
 #   manual — выставляется вручную в дашборде
 # Порядок совпадает с макетом дашборда.
@@ -49,10 +54,10 @@ METRICS = [
     ("photo_reviews",  "Фотоотзывы",        "auto"),
     ("video",          "Видео",             "auto"),
     ("rich_content",   "Рич-контент",       "auto"),
-    ("certificates",   "Сертификаты",       "parse"),
+    ("certificates",   "Сертификаты",       "manual"),
     ("barcode",        "Баркод",            "auto"),
     ("characteristics","Характеристики",    "auto"),
-    ("grid_4th",       "Сетка на 4-м фото", "vision"),
+    ("grid_4th",       "Сетка на 4-м фото", "parse"),
     ("recommendations","Рекомендации",      "manual"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
@@ -193,6 +198,11 @@ def _is_test_card(card):
     return vc.startswith(TEST_PREFIXES)
 
 
+def _photos(card):
+    """Список фото карточки — поле может называться photos или mediaFiles."""
+    return card.get("photos") or card.get("mediaFiles") or []
+
+
 def _photo_url(photo):
     """Ссылка на большое изображение из объекта фото Content API."""
     if isinstance(photo, dict):
@@ -202,7 +212,7 @@ def _photo_url(photo):
 
 def _auto_metrics(card, fb):
     """Считает автоматические метрики по данным карточки и отзывов."""
-    photos = card.get("photos") or []
+    photos = _photos(card)
     video = card.get("video")
     chars = card.get("characteristics") or []
     sizes = card.get("sizes") or []
@@ -220,7 +230,7 @@ def _auto_metrics(card, fb):
         "barcode": barcode_ok,
         "characteristics": chars_filled >= CHARS_THRESHOLD,
         "rating": fb.get("rating", 0) >= RATING_MIN and fb.get("count", 0) > 0,
-        "seo": len(title) >= 25 and len(desc) >= 100,
+        "seo": len(title) >= SEO_TITLE_MIN and len(desc) >= SEO_DESC_MIN,
     }
 
 
@@ -254,21 +264,14 @@ def _publish(items):
 
 
 def _enrich(item, card, ov):
-    """Медленная часть по одному артикулу: сетка (vision) + публичная карточка."""
-    # Сетка на 4-м фото — vision (фолбэк на ручную отметку)
-    if vision.enabled():
-        photos = card.get("photos") or []
-        if len(photos) >= 4:
-            grid = vision.detect_size_grid(_photo_url(photos[3]))
-            if grid is not None:
-                item["metrics"]["grid_4th"] = grid
-    # Сертификаты и рекомендации — парсинг публичной карточки WB
+    """Медленная часть по одному артикулу: данные из публичной карточки WB."""
     pub = wb_public.get_public_signals(item["nm_id"])
-    if pub.get("certificates") is not None:
-        item["metrics"]["certificates"] = pub["certificates"]
     # Рич-контент — точный признак has_rich из публичной карточки
     if pub.get("rich_content") is not None:
         item["metrics"]["rich_content"] = pub["rich_content"]
+    # Сетка — наличие размерной сетки (sizes_table) в карточке
+    if pub.get("grid_4th") is not None:
+        item["metrics"]["grid_4th"] = pub["grid_4th"]
     _recalc_item(item)
 
 
@@ -341,6 +344,26 @@ def is_computing():
 
 def metrics_meta():
     return [{"key": k, "label": label, "kind": kind} for k, label, kind in METRICS]
+
+
+def debug_first_card():
+    """Сырая первая карточка из Content API — чтобы свериться с именами полей."""
+    cards = _fetch_cards()
+    if not cards:
+        return {"total_cards": 0}
+    c = cards[0]
+    photos, media = c.get("photos"), c.get("mediaFiles")
+    return {
+        "total_cards": len(cards),
+        "keys": sorted(c.keys()),
+        "photos_len": len(photos) if isinstance(photos, list) else None,
+        "mediaFiles_len": len(media) if isinstance(media, list) else None,
+        "video": c.get("video"),
+        "title_len": len(c.get("title") or ""),
+        "desc_len": len(c.get("description") or ""),
+        "subjectName": c.get("subjectName"),
+        "raw": c,
+    }
 
 
 def diagnose():
