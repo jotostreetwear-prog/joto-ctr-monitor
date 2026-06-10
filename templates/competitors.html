@@ -62,11 +62,18 @@
     </table>
   </div>
   <p class="legend">
+    Нажми на строку — раскроются <b>полные характеристики</b> и детали контента.<br>
     <b>Контент</b> — 4 точки: фото&nbsp;≥10, рич-контент, размерная сетка, описание.<br>
     <b>Продажи* / Выручка*</b> — <b>оценочно</b>: накопленные за всё время ≈ отзывы&nbsp;×&nbsp;20
     (≈5% покупателей оставляют отзыв). Это не точные цифры и не «в месяц» — порядок величины.<br>
     Цены: <span class="min">зелёным</span> — самая низкая, <span class="max">красным</span> — самая высокая в списке.
   </p>
+
+  <div class="panel" id="verdictWrap" style="display:none">
+    <h3 style="margin:0 0 10px">📊 Вывод: почему у конкурентов так, а у нас так</h3>
+    <div id="verdict" style="white-space:pre-wrap;line-height:1.6;font-size:14px"></div>
+    <div class="hint" id="verdictSrc" style="margin-top:10px"></div>
+  </div>
 
 <script>
 const embedded = window.self !== window.top;
@@ -75,28 +82,57 @@ if(embedded&&window.BX24){ try{ BX24.init(function(){ try{BX24.installFinish();}
 
 const money = n => n==null ? '—' : n.toLocaleString('ru-RU');
 
+function toggle(n){
+  const d=document.getElementById('det-'+n);
+  if(d) d.style.display = d.style.display==='none' ? '' : 'none';
+  resizeBX();
+}
+
+function details(i){
+  const rows = Object.entries(i.chars||{})
+    .map(([k,v])=>`<tr><td style="color:#8a94a6;padding:3px 14px 3px 0">${k}</td><td>${v}</td></tr>`).join('');
+  const content = `Фото: <b>${i.photos??'—'}</b> · Рич-контент: <b>${i.rich?'есть':'нет'}</b> ·
+    Размерная сетка: <b>${i.grid?'есть':'нет'}</b> · Описание: <b>${i.desc_len} симв.</b>`;
+  return `<div style="padding:8px 4px 4px">
+      <div style="margin-bottom:10px">${content}</div>
+      <table style="border:0;min-width:auto">${rows||'<tr><td>Характеристики недоступны</td></tr>'}</table>
+    </div>`;
+}
+
 function render(items){
   if(!items.length){ document.getElementById('rows').innerHTML =
     '<tr><td class="empty" colspan="8">Ничего не нашлось</td></tr>'; resizeBX(); return; }
   const prices = items.map(i=>i.price).filter(p=>p!=null);
   const min = Math.min(...prices), max = Math.max(...prices);
-  document.getElementById('rows').innerHTML = items.map(i=>{
+  document.getElementById('rows').innerHTML = items.map((i,n)=>{
     const pcls = i.price===min?'min':(i.price===max?'max':'');
     const dots = [i.photos>=10, i.rich, i.grid, i.desc_len>=300]
       .map(o=>`<span class="${o?'on':''}"></span>`).join('');
-    return `<tr>
-      <td class="left"><div class="name"><a href="${i.url}" target="_blank">${i.name}</a></div>
-        <div class="brand">${i.brand||''} · nm ${i.nm_id}</div></td>
-      <td class="big ${pcls}">${money(i.price)}</td>
-      <td>${i.rating??'—'}</td>
-      <td>${money(i.feedbacks)}</td>
-      <td>${i.stock??'—'}</td>
-      <td><div class="dots">${dots}</div><span class="brand">${i.content}/4</span></td>
-      <td class="est">${i.orders_est?'≈'+money(i.orders_est):'—'}</td>
-      <td class="est">${i.revenue_est?'≈'+money(i.revenue_est)+'₽':'—'}</td>
-    </tr>`;
+    const ours = i.is_ours ? ' <span style="color:#2563eb;font-size:11px">●наш</span>' : '';
+    return `<tr style="cursor:pointer" onclick="toggle(${n})">
+        <td class="left"><div class="name">▸ <a href="${i.url}" target="_blank" onclick="event.stopPropagation()">${i.name}</a>${ours}</div>
+          <div class="brand">${i.brand||''} · nm ${i.nm_id}</div></td>
+        <td class="big ${pcls}">${money(i.price)}</td>
+        <td>${i.rating??'—'}</td>
+        <td>${money(i.feedbacks)}</td>
+        <td>${i.stock??'—'}</td>
+        <td><div class="dots">${dots}</div><span class="brand">${i.content}/4</span></td>
+        <td class="est">${i.orders_est?'≈'+money(i.orders_est):'—'}</td>
+        <td class="est">${i.revenue_est?'≈'+money(i.revenue_est)+'₽':'—'}</td>
+      </tr>
+      <tr id="det-${n}" style="display:none"><td class="left" colspan="8">${details(i)}</td></tr>`;
   }).join('');
   resizeBX();
+}
+
+function showVerdict(d){
+  const w=document.getElementById('verdictWrap');
+  if(d.verdict){ w.style.display='';
+    document.getElementById('verdict').textContent = d.verdict;
+    document.getElementById('verdictSrc').textContent =
+      d.verdict_ai ? 'Вывод сгенерирован ИИ (Gemini) на основе собранных данных.'
+                   : 'Вывод посчитан по правилам. Для развёрнутого анализа добавь GEMINI_API_KEY.';
+  } else { w.style.display='none'; }
 }
 
 async function run(){
@@ -108,7 +144,7 @@ async function run(){
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
     const d = await r.json();
     if(d.error){ st.textContent=d.error; }
-    else { st.textContent=`Готово: ${d.count} артикулов`; render(d.items); }
+    else { st.textContent=`Готово: ${d.count} артикулов`; render(d.items); showVerdict(d); }
   }catch(e){ st.textContent='Ошибка: '+e; }
   btn.disabled=false;
 }
