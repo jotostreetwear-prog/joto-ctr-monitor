@@ -68,8 +68,12 @@ METRICS = [
     ("promo_block",    "Блокировка акций",  "manual"),
 ]
 # Метрики, которые можно переопределить вручную (всё, что не чистый auto):
-# для них ручная отметка — фолбэк, когда vision/парсинг не смог определить.
+# для них ручная отметка — фолбэк, когда парсинг не смог определить.
 MANUAL_KEYS = [k for k, _, kind in METRICS if kind != "auto"]
+# Значения по умолчанию для ручных метрик (если нет ручной отметки).
+# Сертификаты — зелёные по умолчанию (у продавца серты почти на всё),
+# исключения отмечаются вручную. Остальные — красные, пока не отметят.
+MANUAL_DEFAULTS = {"certificates": True}
 TOTAL_METRICS = len(METRICS)
 
 # Кэш последнего результата + блокировка
@@ -340,7 +344,7 @@ def compute_checklist():
             ov = overrides.get(str(nm_id), {})
             # медленные метрики пока из ручных отметок (уточнятся в фазе 2)
             for key in MANUAL_KEYS:
-                metrics[key] = bool(ov.get(key, False))
+                metrics[key] = bool(ov.get(key, MANUAL_DEFAULTS.get(key, False)))
             ordered = {k: metrics.get(k, False) for k, _, _ in METRICS}
             item = {
                 "nm_id": nm_id,
