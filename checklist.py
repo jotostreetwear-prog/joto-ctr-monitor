@@ -18,6 +18,9 @@ import vision
 import wb_public
 
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
+# Отдельный токен для цен (категория «Цены и скидки»). Если не задан —
+# используем общий WB_API_TOKEN.
+WB_PRICES_TOKEN = os.environ.get("WB_PRICES_TOKEN", "").strip() or WB_API_TOKEN
 
 CONTENT_API = "https://content-api.wildberries.ru"
 PRICES_API = "https://discounts-prices-api.wildberries.ru"
@@ -60,14 +63,17 @@ METRICS = [
     ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "parse"),
     ("recommendations","Рекомендации",      "manual"),
-    ("price",          "Цена",              "auto"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
     ("promo_block",    "Блокировка акций",  "manual"),
 ]
 # Метрики, которые можно переопределить вручную (всё, что не чистый auto):
-# для них ручная отметка — фолбэк, когда vision/парсинг не смог определить.
+# для них ручная отметка — фолбэк, когда парсинг не смог определить.
 MANUAL_KEYS = [k for k, _, kind in METRICS if kind != "auto"]
+# Значения по умолчанию для ручных метрик (если нет ручной отметки).
+# Сертификаты — зелёные по умолчанию (у продавца серты почти на всё),
+# исключения отмечаются вручную. Остальные — красные, пока не отметят.
+MANUAL_DEFAULTS = {"certificates": True}
 TOTAL_METRICS = len(METRICS)
 
 # Кэш последнего результата + блокировка
@@ -148,7 +154,7 @@ def _fetch_cards():
 
 def _fetch_prices():
     """nmID -> цена со скидкой (или базовая). Пусто при ошибке/нет скоупа."""
-    headers = {"Authorization": WB_API_TOKEN}
+    headers = {"Authorization": WB_PRICES_TOKEN}
     prices = {}
     offset = 0
     while True:
@@ -322,7 +328,6 @@ def compute_checklist():
     try:
         cards = _fetch_cards()
         feedbacks = _fetch_feedbacks_stats()
-        prices = _fetch_prices()
         overrides = _load_overrides()
 
         # Фаза 1 — быстрые авто-метрики, таблица показывается сразу
@@ -336,11 +341,10 @@ def compute_checklist():
                 continue
             fb = feedbacks.get(nm_id, {})
             metrics = _auto_metrics(card, fb)
-            metrics["price"] = (prices.get(nm_id) or 0) > 0
             ov = overrides.get(str(nm_id), {})
             # медленные метрики пока из ручных отметок (уточнятся в фазе 2)
             for key in MANUAL_KEYS:
-                metrics[key] = bool(ov.get(key, False))
+                metrics[key] = bool(ov.get(key, MANUAL_DEFAULTS.get(key, False)))
             ordered = {k: metrics.get(k, False) for k, _, _ in METRICS}
             item = {
                 "nm_id": nm_id,
@@ -434,10 +438,13 @@ def diagnose():
         out["content_exc"] = str(e)
 
     # Цены — статус + сырой пример товара (ищем поле блокировки акций)
+    out["prices_token_len"] = len(WB_PRICES_TOKEN)
+    out["prices_token_separate"] = WB_PRICES_TOKEN != WB_API_TOKEN
     try:
         r = httpx.get(
             f"{PRICES_API}/api/v2/list/goods/filter",
-            headers=headers, params={"limit": 10, "offset": 0}, timeout=30,
+            headers={"Authorization": WB_PRICES_TOKEN},
+            params={"limit": 10, "offset": 0}, timeout=30,
         )
         out["prices_status"] = r.status_code
         if r.status_code == 200:
