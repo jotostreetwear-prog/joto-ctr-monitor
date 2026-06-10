@@ -12,6 +12,7 @@ import time
 import threading
 import httpx
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 import vision
 import wb_public
@@ -19,7 +20,6 @@ import wb_public
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 
 CONTENT_API = "https://content-api.wildberries.ru"
-PRICES_API = "https://discounts-prices-api.wildberries.ru"
 FEEDBACKS_API = "https://feedbacks-api.wildberries.ru"
 
 # Сколько заполненных характеристик считаем достаточным для «зелёной» метрики
@@ -47,7 +47,6 @@ METRICS = [
     ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "vision"),
     ("recommendations","Рекомендации",      "parse"),
-    ("price",          "Цена",              "auto"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
 ]
@@ -132,40 +131,6 @@ def _fetch_cards():
     return cards
 
 
-def _fetch_prices():
-    """nmID -> цена со скидкой (или базовая). Пусто при ошибке/нет скоупа."""
-    headers = {"Authorization": WB_API_TOKEN}
-    prices = {}
-    offset = 0
-    while True:
-        try:
-            resp = httpx.get(
-                f"{PRICES_API}/api/v2/list/goods/filter",
-                headers=headers, params={"limit": 1000, "offset": offset}, timeout=30,
-            )
-        except Exception as e:
-            print(f"Чек-лист: ошибка Prices API: {e}")
-            break
-        if resp.status_code != 200:
-            print(f"Чек-лист: Prices API {resp.status_code}: {resp.text[:200]}")
-            break
-        goods = (resp.json().get("data") or {}).get("listGoods") or []
-        if not goods:
-            break
-        for g in goods:
-            nm = g.get("nmID")
-            sizes = g.get("sizes") or []
-            price = 0
-            if sizes:
-                price = sizes[0].get("discountedPrice") or sizes[0].get("price") or 0
-            prices[nm] = price
-        if len(goods) < 1000:
-            break
-        offset += 1000
-        time.sleep(0.3)
-    return prices
-
-
 def _fetch_feedbacks_stats():
     """nmID -> {has_photo, rating, count}. Агрегируем по списку отзывов."""
     headers = {"Authorization": WB_API_TOKEN}
@@ -219,8 +184,8 @@ def _photo_url(photo):
     return photo if isinstance(photo, str) else None
 
 
-def _auto_metrics(card, price, fb):
-    """Считает автоматические метрики по данным карточки/цены/отзывов."""
+def _auto_metrics(card, fb):
+    """Считает автоматические метрики по данным карточки и отзывов."""
     photos = card.get("photos") or []
     video = card.get("video")
     chars = card.get("characteristics") or []
@@ -238,7 +203,6 @@ def _auto_metrics(card, price, fb):
         "rich_content": len(desc) >= 1000,
         "barcode": barcode_ok,
         "characteristics": chars_filled >= CHARS_THRESHOLD,
-        "price": (price or 0) > 0,
         "rating": fb.get("rating", 0) >= RATING_MIN and fb.get("count", 0) > 0,
         "seo": len(title) >= 25 and len(desc) >= 100,
     }
@@ -264,75 +228,81 @@ def _summarize(items):
     }
 
 
+def _publish(items):
+    """Складывает отсортированный снимок чек-листа в кэш (для дашборда)."""
+    snapshot = sorted(items, key=lambda i: i["score"])
+    with _lock:
+        _cache["items"] = snapshot
+        _cache["summary"] = _summarize(snapshot)
+        _cache["checked_at"] = datetime.now().strftime("%d.%m.%Y, %H:%M")
+
+
+def _enrich(item, card, ov):
+    """Медленная часть по одному артикулу: сетка (vision) + публичная карточка."""
+    # Сетка на 4-м фото — vision (фолбэк на ручную отметку)
+    if vision.enabled():
+        photos = card.get("photos") or []
+        if len(photos) >= 4:
+            grid = vision.detect_size_grid(_photo_url(photos[3]))
+            if grid is not None:
+                item["metrics"]["grid_4th"] = grid
+    # Сертификаты и рекомендации — парсинг публичной карточки WB
+    pub = wb_public.get_public_signals(item["nm_id"])
+    if pub["certificates"] is not None:
+        item["metrics"]["certificates"] = pub["certificates"]
+    if pub["recommendations"] is not None:
+        item["metrics"]["recommendations"] = pub["recommendations"]
+    _recalc_item(item)
+
+
 def compute_checklist():
-    """Полный пересчёт чек-листа по всем артикулам кабинета."""
+    """Пересчёт чек-листа: сначала быстрые авто-метрики, потом параллельное
+    обогащение медленными (сетка/сертификаты/рекомендации)."""
     global _computing
     with _lock:
         if _computing:
-            return _cache
+            return dict(_cache)
         _computing = True
     try:
         cards = _fetch_cards()
-        prices = _fetch_prices()
         feedbacks = _fetch_feedbacks_stats()
         overrides = _load_overrides()
 
-        items = []
+        # Фаза 1 — быстрые авто-метрики, таблица показывается сразу
+        items, ctx = [], []
         for card in cards:
             nm_id = card.get("nmID")
             if not nm_id:
                 continue
-            name = card.get("title") or card.get("vendorCode") or str(nm_id)
-            vendor = card.get("vendorCode") or ""
             fb = feedbacks.get(nm_id, {})
-            metrics = _auto_metrics(card, prices.get(nm_id), fb)
+            metrics = _auto_metrics(card, fb)
             ov = overrides.get(str(nm_id), {})
-
-            # Сетка на 4-м фото — Claude Vision (фолбэк на ручную отметку)
-            grid = None
-            if vision.enabled():
-                photos = card.get("photos") or []
-                if len(photos) >= 4:
-                    grid = vision.detect_size_grid(_photo_url(photos[3]))
-            metrics["grid_4th"] = grid if grid is not None else bool(ov.get("grid_4th", False))
-
-            # Сертификаты и рекомендации — парсинг публичной карточки WB
-            pub = wb_public.get_public_signals(nm_id)
-            metrics["certificates"] = (
-                pub["certificates"] if pub["certificates"] is not None
-                else bool(ov.get("certificates", False))
-            )
-            metrics["recommendations"] = (
-                pub["recommendations"] if pub["recommendations"] is not None
-                else bool(ov.get("recommendations", False))
-            )
-
-            # Закреплённые отзывы — только ручная отметка
-            metrics["pinned_reviews"] = bool(ov.get("pinned_reviews", False))
-
-            time.sleep(0.2)  # бережём публичные эндпоинты WB
-            # упорядочиваем по METRICS
+            # медленные метрики пока из ручных отметок (уточнятся в фазе 2)
+            for key in MANUAL_KEYS:
+                metrics[key] = bool(ov.get(key, False))
             ordered = {k: metrics.get(k, False) for k, _, _ in METRICS}
             item = {
                 "nm_id": nm_id,
-                "name": name,
-                "vendor_code": vendor,
+                "name": card.get("title") or card.get("vendorCode") or str(nm_id),
+                "vendor_code": card.get("vendorCode") or "",
                 "metrics": ordered,
             }
             _recalc_item(item)
             items.append(item)
+            ctx.append((item, card, ov))
 
-        items.sort(key=lambda i: i["score"])
-        summary = _summarize(items)
-        result = {
-            "checked_at": datetime.now().strftime("%d.%m.%Y, %H:%M"),
-            "items": items,
-            "summary": summary,
-        }
+        _publish(items)  # дашборд уже показывает данные
+        print(f"Чек-лист: фаза 1 готова, артикулов {len(items)}")
+
+        # Фаза 2 — медленное обогащение параллельно
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            list(ex.map(lambda c: _enrich(*c), ctx))
+
+        _publish(items)
         with _lock:
-            _cache.update(result)
+            summary = dict(_cache["summary"])
         print(f"Чек-лист готов: {summary}")
-        return result
+        return get_cached()
     finally:
         with _lock:
             _computing = False
@@ -380,18 +350,6 @@ def diagnose():
             out["content_error"] = r.text[:300]
     except Exception as e:
         out["content_exc"] = str(e)
-
-    # Цены
-    try:
-        r = httpx.get(
-            f"{PRICES_API}/api/v2/list/goods/filter",
-            headers=headers, params={"limit": 10, "offset": 0}, timeout=30,
-        )
-        out["prices_status"] = r.status_code
-        if r.status_code != 200:
-            out["prices_error"] = r.text[:200]
-    except Exception as e:
-        out["prices_exc"] = str(e)
 
     # Отзывы
     try:
