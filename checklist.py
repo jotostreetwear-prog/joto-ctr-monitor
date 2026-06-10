@@ -305,6 +305,7 @@ def compute_checklist():
                 "nm_id": nm_id,
                 "name": card.get("title") or card.get("vendorCode") or str(nm_id),
                 "vendor_code": card.get("vendorCode") or "",
+                "category": card.get("subjectName") or "Без категории",
                 "metrics": ordered,
             }
             _recalc_item(item)

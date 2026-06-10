@@ -59,7 +59,13 @@
   <div class="stats" id="stats"></div>
 
   <div class="bar">
-    <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
+    <div style="display:flex;align-items:center;gap:20px">
+      <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
+      <select id="catSelect" onchange="onCat()" style="padding:9px 12px;border:1px solid #d4dae3;
+        border-radius:10px;font-size:14px;font-weight:600;color:var(--ink);background:#fff;cursor:pointer">
+        <option value="all">Все категории</option>
+      </select>
+    </div>
     <div style="display:flex;align-items:center;gap:18px">
       <div style="text-align:right">
         <span class="checked"><span class="dot"></span>Проверено: <b id="checkedAt">—</b></span>
@@ -79,9 +85,19 @@
      можно переключать кликом — отметка сохраняется.</p>
 
 <script>
-let META=[], DATA=null, onlyIssues=false;
+let META=[], DATA=null, onlyIssues=false, category='all';
 
 const embedded = window.self !== window.top;  // открыто внутри Битрикс24
+
+function summarize(rows){
+  const n=rows.length;
+  const avg = n ? Math.round(rows.reduce((s,i)=>s+i.score,0)/n) : 0;
+  const ready = rows.filter(i=>i.score===100).length;
+  const reds = rows.reduce((s,i)=>s+(i.reds||0),0);
+  return {avg_score:avg, total:n, ready, with_issues:n-ready, total_reds:reds};
+}
+
+function inCategory(it){ return category==='all' || it.category===category; }
 
 function resizeBX(){
   if(!embedded || !window.BX24) return;
@@ -116,8 +132,24 @@ function renderHead(){
     '<th>Балл</th>';
 }
 
+function populateCats(){
+  const sel = document.getElementById('catSelect');
+  const counts = {};
+  DATA.items.forEach(it=>{ counts[it.category]=(counts[it.category]||0)+1; });
+  const cats = Object.keys(counts).sort((a,b)=>a.localeCompare(b,'ru'));
+  sel.innerHTML = `<option value="all">Все категории (${DATA.items.length})</option>` +
+    cats.map(c=>`<option value="${c}">${c} (${counts[c]})</option>`).join('');
+  sel.value = category;
+}
+
+function onCat(){
+  category = document.getElementById('catSelect').value;
+  renderStats(summarize(DATA.items.filter(inCategory)));
+  renderRows();
+}
+
 function renderRows(){
-  const rows = DATA.items.filter(it=>!onlyIssues || it.score<100);
+  const rows = DATA.items.filter(it=>inCategory(it) && (!onlyIssues || it.score<100));
   if(!rows.length){
     document.getElementById('rows').innerHTML =
       `<tr><td class="empty" colspan="${META.length+2}">Нет артикулов для показа</td></tr>`;
@@ -143,9 +175,12 @@ function renderRows(){
 function render(){
   if(!DATA) return;
   document.getElementById('checkedAt').textContent = DATA.checked_at || '—';
-  if(DATA.summary && DATA.summary.total!=null) renderStats(DATA.summary);
   renderHead();
-  if(DATA.items && DATA.items.length) renderRows();
+  if(DATA.items && DATA.items.length){
+    populateCats();
+    renderStats(summarize(DATA.items.filter(inCategory)));
+    renderRows();
+  }
   else document.getElementById('rows').innerHTML =
     `<tr><td class="empty" colspan="${META.length+2}">${DATA.computing?'Идёт проверка карточек…':'Нет данных. Нажмите «Обновить».'}</td></tr>`;
   const btn=document.getElementById('refreshBtn');
