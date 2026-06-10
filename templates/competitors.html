@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анализ конкурентов</title>
+<script src="//api.bitrix24.com/api/v1/"></script>
+<style>
+  :root{--bg:#eef2f6;--card:#fff;--ink:#1f2733;--muted:#8a94a6;--green:#22c55e;--red:#ef4444;
+    --orange:#f97316;--line:#eef1f5;--blue:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);
+    color:var(--ink);padding:32px 40px}
+  h1{font-size:28px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 24px}
+  .panel{background:var(--card);border-radius:14px;padding:20px 24px;margin-bottom:20px;
+    box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  textarea{width:100%;min-height:90px;border:1px solid #d4dae3;border-radius:10px;padding:12px;
+    font-size:14px;font-family:inherit;resize:vertical}
+  .row{display:flex;gap:14px;align-items:center;margin-top:12px}
+  button{background:var(--ink);color:#fff;border:0;border-radius:10px;padding:11px 20px;cursor:pointer;
+    font-weight:600;font-size:14px}
+  button:disabled{opacity:.5;cursor:default}
+  .hint{color:var(--muted);font-size:13px}
+  .wrap{background:var(--card);border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  table{border-collapse:collapse;width:100%;min-width:980px}
+  th,td{padding:13px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
+  th.left,td.left{text-align:left}
+  .name{font-weight:700;color:var(--ink)} .name a{color:var(--blue);text-decoration:none}
+  .brand{color:var(--muted);font-size:12px}
+  .big{font-weight:700;font-size:15px}
+  .min{color:var(--green)} .max{color:var(--red)}
+  .dots span{display:inline-block;width:9px;height:9px;border-radius:50%;margin:0 1px;background:#e0e4ea}
+  .dots span.on{background:var(--green)}
+  .est{color:var(--orange)}
+  .empty{padding:50px;text-align:center;color:var(--muted)}
+  .legend{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
+  .nav a{color:var(--blue);text-decoration:none;font-size:13px;margin-right:16px}
+</style>
+</head>
+<body>
+  <div class="nav"><a href="/checklist">← Чек-лист карточек</a></div>
+  <h1>Анализ конкурентов</h1>
+  <p class="sub">Вставь ссылки на карточки конкурентов или номера артикулов — соберу цены, рейтинг, отзывы и контент</p>
+
+  <div class="panel">
+    <textarea id="input" placeholder="Вставь сюда ссылки на карточки WB или номера артикулов, по одному в строке или через пробел.&#10;Например:&#10;https://www.wildberries.ru/catalog/221542342/detail.aspx&#10;176920043"></textarea>
+    <div class="row">
+      <button id="go" onclick="run()">Анализировать</button>
+      <span class="hint" id="status">До 30 артикулов за раз</span>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead><tr>
+        <th class="left">Товар</th><th>Цена&nbsp;₽</th><th>Рейтинг</th><th>Отзывы</th>
+        <th>Остаток</th><th>Контент</th><th>Продажи*</th><th>Выручка*</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td class="empty" colspan="8">Вставь артикулы и нажми «Анализировать»</td></tr></tbody>
+    </table>
+  </div>
+  <p class="legend">
+    <b>Контент</b> — 4 точки: фото&nbsp;≥10, рич-контент, размерная сетка, описание.<br>
+    <b>Продажи* / Выручка*</b> — <b>оценочно</b>: накопленные за всё время ≈ отзывы&nbsp;×&nbsp;20
+    (≈5% покупателей оставляют отзыв). Это не точные цифры и не «в месяц» — порядок величины.<br>
+    Цены: <span class="min">зелёным</span> — самая низкая, <span class="max">красным</span> — самая высокая в списке.
+  </p>
+
+<script>
+const embedded = window.self !== window.top;
+function resizeBX(){ if(embedded&&window.BX24){ try{ BX24.fitWindow&&BX24.fitWindow(); }catch(e){} } }
+if(embedded&&window.BX24){ try{ BX24.init(function(){ try{BX24.installFinish();}catch(e){} resizeBX(); }); }catch(e){} }
+
+const money = n => n==null ? '—' : n.toLocaleString('ru-RU');
+
+function render(items){
+  if(!items.length){ document.getElementById('rows').innerHTML =
+    '<tr><td class="empty" colspan="8">Ничего не нашлось</td></tr>'; resizeBX(); return; }
+  const prices = items.map(i=>i.price).filter(p=>p!=null);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  document.getElementById('rows').innerHTML = items.map(i=>{
+    const pcls = i.price===min?'min':(i.price===max?'max':'');
+    const dots = [i.photos>=10, i.rich, i.grid, i.desc_len>=300]
+      .map(o=>`<span class="${o?'on':''}"></span>`).join('');
+    return `<tr>
+      <td class="left"><div class="name"><a href="${i.url}" target="_blank">${i.name}</a></div>
+        <div class="brand">${i.brand||''} · nm ${i.nm_id}</div></td>
+      <td class="big ${pcls}">${money(i.price)}</td>
+      <td>${i.rating??'—'}</td>
+      <td>${money(i.feedbacks)}</td>
+      <td>${i.stock??'—'}</td>
+      <td><div class="dots">${dots}</div><span class="brand">${i.content}/4</span></td>
+      <td class="est">${i.orders_est?'≈'+money(i.orders_est):'—'}</td>
+      <td class="est">${i.revenue_est?'≈'+money(i.revenue_est)+'₽':'—'}</td>
+    </tr>`;
+  }).join('');
+  resizeBX();
+}
+
+async function run(){
+  const text = document.getElementById('input').value;
+  const btn=document.getElementById('go'), st=document.getElementById('status');
+  btn.disabled=true; st.textContent='Собираю данные…';
+  try{
+    const r = await fetch('/competitors/analyze', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
+    const d = await r.json();
+    if(d.error){ st.textContent=d.error; }
+    else { st.textContent=`Готово: ${d.count} артикулов`; render(d.items); }
+  }catch(e){ st.textContent='Ошибка: '+e; }
+  btn.disabled=false;
+}
+</script>
+</body>
+</html>

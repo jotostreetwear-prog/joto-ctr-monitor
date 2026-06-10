@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 import checklist
 import vision
+import competitors
 
 app = Flask(__name__)
 
@@ -318,6 +319,17 @@ def notify_checklist(force_compute=False):
     print(f"Чек-лист: сводка отправлена Татьяне ({len(worst)} с недочётами)")
 
 
+@app.route("/competitors", methods=["GET", "POST"])
+def competitors_page():
+    return render_template("competitors.html")
+
+
+@app.route("/competitors/analyze", methods=["POST"])
+def competitors_analyze():
+    body = request.get_json(silent=True) or {}
+    return jsonify(competitors.analyze(body.get("text", "")))
+
+
 @app.route("/checklist", methods=["GET", "POST"])
 def checklist_page():
     # POST приходит, когда страница открыта как приложение в Битрикс24 (iframe)
@@ -393,7 +405,8 @@ def checklist_debug_public():
 def index():
     return (
         "JOTO CTR Monitor работает ✓<br>"
-        "Чек-лист карточек: <a href='/checklist'>/checklist</a>"
+        "Чек-лист карточек: <a href='/checklist'>/checklist</a><br>"
+        "Анализ конкурентов: <a href='/competitors'>/competitors</a>"
     )
 
 @app.route("/test-notify", methods=["GET"])
