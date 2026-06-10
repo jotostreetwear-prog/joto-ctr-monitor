@@ -318,8 +318,9 @@ def notify_checklist(force_compute=False):
     print(f"Чек-лист: сводка отправлена Татьяне ({len(worst)} с недочётами)")
 
 
-@app.route("/checklist", methods=["GET"])
+@app.route("/checklist", methods=["GET", "POST"])
 def checklist_page():
+    # POST приходит, когда страница открыта как приложение в Битрикс24 (iframe)
     return render_template("checklist.html")
 
 

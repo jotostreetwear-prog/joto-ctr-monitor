@@ -49,6 +49,8 @@
   button.refresh:disabled{opacity:.5;cursor:default}
   .legend{font-size:12px;color:var(--muted);margin-top:14px}
 </style>
+<!-- SDK Битрикс24: подключается, чтобы страница корректно жила внутри портала (iframe) -->
+<script src="//api.bitrix24.com/api/v1/"></script>
 </head>
 <body>
   <h1>Чек-лист карточек</h1>
@@ -75,6 +77,16 @@
 
 <script>
 let META=[], DATA=null, onlyIssues=false;
+
+const embedded = window.self !== window.top;  // открыто внутри Битрикс24
+
+function resizeBX(){
+  if(!embedded || !window.BX24) return;
+  try{
+    if(BX24.fitWindow) BX24.fitWindow();
+    else if(BX24.resizeWindow) BX24.resizeWindow(document.body.scrollWidth, document.body.scrollHeight);
+  }catch(e){}
+}
 
 const fmt = n => (n==null?'—':n);
 
@@ -134,6 +146,7 @@ function render(){
   const btn=document.getElementById('refreshBtn');
   btn.disabled = !!DATA.computing;
   btn.textContent = DATA.computing ? 'Проверяем…' : 'Обновить';
+  resizeBX();
 }
 
 async function load(){
@@ -157,6 +170,7 @@ document.getElementById('onlyIssues').onclick = function(){
   onlyIssues=!onlyIssues; this.classList.toggle('on',onlyIssues); renderRows();
 };
 
+if(embedded && window.BX24){ try{ BX24.init(function(){ resizeBX(); }); }catch(e){} }
 load();
 </script>
 </body>
