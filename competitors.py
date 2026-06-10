@@ -197,6 +197,40 @@ def _gemini_verdict(items):
         return None
 
 
+def debug(nm):
+    """Сырые публичные ответы WB по артикулу — чтобы понять, что отдаётся."""
+    ua = {"User-Agent": "Mozilla/5.0 (compatible; JOTO/1.0)"}
+    out = {"nm": nm, "basket_host": wb_public._basket_host(nm), "vol": nm // 100000}
+
+    # card.wb.ru — цена/рейтинг/отзывы
+    try:
+        r = httpx.get(
+            "https://card.wb.ru/cards/v2/detail",
+            params={"appType": 1, "curr": "rub", "dest": -1257786, "spp": 30, "nm": nm},
+            headers=ua, timeout=20,
+        )
+        out["detail_status"] = r.status_code
+        out["detail_body"] = r.text[:700]
+    except Exception as e:
+        out["detail_exc"] = repr(e)
+
+    # basket card.json — контент/название
+    vol, part, host = nm // 100000, nm // 1000, wb_public._basket_host(nm)
+    url = f"https://{host}/vol{vol}/part{part}/{nm}/info/ru/card.json"
+    out["cardjson_url"] = url
+    try:
+        r = httpx.get(url, headers=ua, timeout=20)
+        out["cardjson_status"] = r.status_code
+        if r.status_code == 200:
+            j = r.json()
+            out["cardjson_keys"] = sorted(j.keys())[:30]
+            out["cardjson_name"] = j.get("imt_name")
+    except Exception as e:
+        out["cardjson_exc"] = repr(e)
+
+    return out
+
+
 def analyze(text):
     nms = extract_nm_ids(text)
     if not nms:
