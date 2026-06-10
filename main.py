@@ -4,8 +4,11 @@ import httpx
 import threading
 import schedule
 import time
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
+
+import checklist
+import vision
 
 app = Flask(__name__)
 
@@ -278,11 +281,98 @@ def check_budgets():
     else:
         print(f"Кампаний с бюджетом ниже {BUDGET_THRESHOLD} ₽ не найдено")
 
+# ===================== ЧЕК-ЛИСТ КАРТОЧЕК =====================
+
+def notify_checklist(force_compute=False):
+    """Считает чек-лист и шлёт Татьяне сводку по готовности карточек."""
+    print(f"Чек-лист: уведомление {datetime.now()}")
+    if not WB_API_TOKEN:
+        print("Чек-лист: нет WB_API_TOKEN")
+        return
+
+    data = checklist.compute_checklist() if force_compute else checklist.get_cached()
+    if not data.get("items"):
+        data = checklist.compute_checklist()
+    items = data.get("items") or []
+    s = data.get("summary") or {}
+    if not items:
+        print("Чек-лист: нет данных для уведомления")
+        return
+
+    worst = [i for i in items if i["score"] < 100][:10]
+    lines = [
+        f"📋 *Чек-лист карточек WB* (на {data.get('checked_at','')})",
+        f"Средний балл: *{s.get('avg_score',0)}%*",
+        f"Готовы: {s.get('ready',0)} • С недочётами: {s.get('with_issues',0)} • "
+        f"Всего артикулов: {s.get('total',0)}",
+    ]
+    if worst:
+        lines.append("\nТоп артикулов с недочётами:")
+        for i in worst:
+            lines.append(f"🔴 {i['name']} (nm {i['nm_id']}) — {i['score']}%")
+
+    if not B24_WEBHOOK:
+        print("Чек-лист: нет B24_WEBHOOK — не шлём")
+        return
+    send_b24_message(TATIANA_USER_ID, "\n".join(lines), from_bot=True)
+    print(f"Чек-лист: сводка отправлена Татьяне ({len(worst)} с недочётами)")
+
+
+@app.route("/checklist", methods=["GET"])
+def checklist_page():
+    return render_template("checklist.html")
+
+
+@app.route("/checklist/data", methods=["GET"])
+def checklist_data():
+    data = checklist.get_cached()
+    return jsonify({
+        "checked_at": data.get("checked_at"),
+        "items": data.get("items", []),
+        "summary": data.get("summary", {}),
+        "metrics": checklist.metrics_meta(),
+        "computing": checklist.is_computing(),
+        "vision": vision.enabled(),
+    })
+
+
+@app.route("/checklist/refresh", methods=["POST", "GET"])
+def checklist_refresh():
+    threading.Thread(target=checklist.compute_checklist, daemon=True).start()
+    return jsonify({"ok": True, "message": "Пересчёт чек-листа запущен"})
+
+
+@app.route("/checklist/override", methods=["POST"])
+def checklist_override():
+    body = request.get_json(silent=True) or {}
+    ok = checklist.set_override(body.get("nm_id"), body.get("metric"), body.get("value"))
+    return jsonify({"ok": ok})
+
+
+@app.route("/checklist/notify-now", methods=["GET"])
+def checklist_notify_now():
+    threading.Thread(target=notify_checklist, kwargs={"force_compute": True}, daemon=True).start()
+    return jsonify({"ok": True, "message": "Сводка чек-листа будет отправлена Татьяне"})
+
+
+@app.route("/checklist/debug-public", methods=["GET"])
+def checklist_debug_public():
+    """Сырые публичные ответы WB по артикулу — для донастройки парсинга."""
+    import wb_public
+    nm = request.args.get("nm", type=int)
+    if not nm:
+        return jsonify({"error": "укажите ?nm=<артикул>"}), 400
+    return jsonify(wb_public.debug_dump(nm))
+
+
 # ===================== FLASK =====================
 
 @app.route("/", methods=["GET"])
 def index():
-    return "JOTO CTR Monitor работает ✓"
+    return (
+        "JOTO CTR Monitor работает ✓<br>"
+        "Чек-лист карточек: <a href='/checklist'>/checklist</a>"
+    )
 
 @app.route("/test-notify", methods=["GET"])
 def test_notify():
@@ -371,12 +461,16 @@ def run_scheduler():
     schedule.every().day.at("06:00").do(check_ctr)
     # Проверка остатка бюджета кампаний каждые полчаса
     schedule.every(30).minutes.do(check_budgets)
-    print("Планировщик запущен — CTR каждый день в 09:00 МСК, бюджет — каждые 30 минут")
+    # Сводка по чек-листу карточек — раз в день
+    schedule.every().day.at("07:00").do(notify_checklist)
+    print("Планировщик запущен — CTR в 09:00 МСК, бюджет каждые 30 мин, чек-лист в 10:00 МСК")
     while True:
         schedule.run_pending()
         time.sleep(60)
 
 if __name__ == "__main__":
     threading.Thread(target=run_scheduler, daemon=True).start()
+    # Первичный расчёт чек-листа в фоне, чтобы дашборд сразу был с данными
+    threading.Thread(target=checklist.compute_checklist, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)

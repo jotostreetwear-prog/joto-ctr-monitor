@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+overrides.json
+vision_cache.json
