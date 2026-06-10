@@ -104,11 +104,17 @@ def _has_seller_recommendations(nm_id):
 
 
 def get_public_signals(nm_id):
-    """{certificates: bool|None, recommendations: bool|None} по публичным данным."""
-    card_json = fetch_card_json(nm_id)
+    """{certificates: bool|None, rich_content: bool|None} по публичным данным.
+
+    rich_content берём из точного поля has_rich публичной карточки.
+    Рекомендации продавца через публичный API надёжно не достаются — вынесены
+    в ручную отметку, поэтому здесь их нет.
+    """
+    cj = fetch_card_json(nm_id)
+    rich = cj.get("has_rich") if isinstance(cj, dict) and "has_rich" in cj else None
     return {
-        "certificates": _has_certificate(card_json),
-        "recommendations": _has_seller_recommendations(nm_id),
+        "certificates": _has_certificate(cj),
+        "rich_content": rich,
     }
 
 
