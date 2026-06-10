@@ -73,7 +73,9 @@ def fetch_detail(nm_id):
             headers=_UA, timeout=20, follow_redirects=True,
         )
         if r.status_code == 200:
-            products = (r.json().get("data") or {}).get("products") or []
+            j = r.json()
+            # v4 отдаёт products на верхнем уровне, прежние версии — под "data"
+            products = (j.get("data") or {}).get("products") or j.get("products") or []
             return products[0] if products else None
         print(f"WB public detail {nm_id} -> {r.status_code}")
     except Exception as e:
