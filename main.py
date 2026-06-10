@@ -330,6 +330,14 @@ def competitors_analyze():
     return jsonify(competitors.analyze(body.get("text", "")))
 
 
+@app.route("/competitors/debug", methods=["GET"])
+def competitors_debug():
+    nm = request.args.get("nm", type=int)
+    if not nm:
+        return jsonify({"error": "укажите ?nm=<артикул>"}), 400
+    return jsonify(competitors.debug(nm))
+
+
 @app.route("/checklist", methods=["GET", "POST"])
 def checklist_page():
     # POST приходит, когда страница открыта как приложение в Битрикс24 (iframe)
