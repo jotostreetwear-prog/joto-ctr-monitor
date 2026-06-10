@@ -53,7 +53,7 @@ METRICS = [
     ("barcode",        "Баркод",            "auto"),
     ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "vision"),
-    ("recommendations","Рекомендации",      "parse"),
+    ("recommendations","Рекомендации",      "manual"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
     ("promo_block",    "Блокировка акций",  "manual"),
@@ -264,10 +264,11 @@ def _enrich(item, card, ov):
                 item["metrics"]["grid_4th"] = grid
     # Сертификаты и рекомендации — парсинг публичной карточки WB
     pub = wb_public.get_public_signals(item["nm_id"])
-    if pub["certificates"] is not None:
+    if pub.get("certificates") is not None:
         item["metrics"]["certificates"] = pub["certificates"]
-    if pub["recommendations"] is not None:
-        item["metrics"]["recommendations"] = pub["recommendations"]
+    # Рич-контент — точный признак has_rich из публичной карточки
+    if pub.get("rich_content") is not None:
+        item["metrics"]["rich_content"] = pub["rich_content"]
     _recalc_item(item)
 
 
@@ -304,6 +305,7 @@ def compute_checklist():
                 "nm_id": nm_id,
                 "name": card.get("title") or card.get("vendorCode") or str(nm_id),
                 "vendor_code": card.get("vendorCode") or "",
+                "category": card.get("subjectName") or "Без категории",
                 "metrics": ordered,
             }
             _recalc_item(item)
