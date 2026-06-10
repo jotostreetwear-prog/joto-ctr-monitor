@@ -85,6 +85,15 @@ def _analyze_one(nm):
         name = name or cj.get("imt_name")
         chars = _characteristics(cj)
 
+    # Остаток — сумма по всем размерам и складам (в ответе v4 нет totalQuantity)
+    stock = product.get("totalQuantity")
+    if stock is None:
+        stock = sum(
+            st.get("qty", 0)
+            for s in (product.get("sizes") or [])
+            for st in (s.get("stocks") or [])
+        )
+
     # Грубая оценка: накопленные продажи ≈ отзывы / доля оставляющих отзыв
     orders_est = round(feedbacks / REVIEW_RATE) if feedbacks else 0
     revenue_est = orders_est * price if (price and orders_est) else None
@@ -107,7 +116,8 @@ def _analyze_one(nm):
         "price": price,
         "rating": round(rating, 2) if rating else None,
         "feedbacks": feedbacks,
-        "stock": product.get("totalQuantity"),
+        "stock": stock,
+        "recommendations": (cj.get("has_seller_recommendations") if isinstance(cj, dict) else None),
         "photos": photos,
         "rich": rich,
         "grid": grid,

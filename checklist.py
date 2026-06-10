@@ -62,7 +62,7 @@ METRICS = [
     ("barcode",        "Баркод",            "auto"),
     ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "parse"),
-    ("recommendations","Рекомендации",      "manual"),
+    ("recommendations","Рекомендации",      "parse"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
     ("promo_block",    "Блокировка акций",  "manual"),
@@ -314,6 +314,9 @@ def _enrich(item, card, ov):
     # Сетка — наличие размерной сетки (sizes_table) в карточке
     if pub.get("grid_4th") is not None:
         item["metrics"]["grid_4th"] = pub["grid_4th"]
+    # Рекомендации продавца — поле has_seller_recommendations из card.json
+    if pub.get("recommendations") is not None:
+        item["metrics"]["recommendations"] = pub["recommendations"]
     _recalc_item(item)
 
 
