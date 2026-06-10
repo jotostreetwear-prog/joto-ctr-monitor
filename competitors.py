@@ -198,36 +198,53 @@ def _gemini_verdict(items):
 
 
 def debug(nm):
-    """Сырые публичные ответы WB по артикулу — чтобы понять, что отдаётся."""
+    """Перебирает кандидатов публичных эндпоинтов WB и basket-хостов,
+    чтобы найти рабочие (v2 card.wb.ru отключён с дек.2025)."""
     ua = {"User-Agent": "Mozilla/5.0 (compatible; JOTO/1.0)"}
-    out = {"nm": nm, "basket_host": wb_public._basket_host(nm), "vol": nm // 100000}
+    vol, part = nm // 100000, nm // 1000
+    out = {"nm": nm, "vol": vol, "price_endpoints": {}, "basket_scan": None}
 
-    # card.wb.ru — цена/рейтинг/отзывы
-    try:
-        r = httpx.get(
-            "https://card.wb.ru/cards/v2/detail",
-            params={"appType": 1, "curr": "rub", "dest": -1257786, "spp": 30, "nm": nm},
-            headers=ua, timeout=20,
-        )
-        out["detail_status"] = r.status_code
-        out["detail_body"] = r.text[:700]
-    except Exception as e:
-        out["detail_exc"] = repr(e)
+    # Кандидаты эндпоинтов цены/рейтинга/отзывов
+    candidates = [
+        ("v2_card", "https://card.wb.ru/cards/v2/detail",
+         {"appType": 1, "curr": "rub", "dest": -1257786, "spp": 30, "nm": nm}),
+        ("v1_card", "https://card.wb.ru/cards/v1/detail",
+         {"appType": 1, "curr": "rub", "dest": -1257786, "nm": nm}),
+        ("v2_ucard", "https://u-card.wb.ru/cards/v2/detail",
+         {"appType": 1, "curr": "rub", "dest": -1257786, "spp": 30, "nm": nm}),
+        ("v4_card", "https://card.wb.ru/cards/v4/detail",
+         {"appType": 1, "curr": "rub", "dest": -1257786, "spp": 30, "nm": nm}),
+    ]
+    for tag, url, params in candidates:
+        try:
+            r = httpx.get(url, params=params, headers=ua, timeout=15)
+            info = {"status": r.status_code}
+            if r.status_code == 200:
+                try:
+                    prods = (r.json().get("data") or {}).get("products") or r.json().get("products") or []
+                    info["products"] = len(prods)
+                    if prods:
+                        p = prods[0]
+                        info["sample"] = {k: p.get(k) for k in
+                                          ("name", "salePriceU", "reviewRating", "feedbacks", "sizes")}
+                except Exception as e:
+                    info["parse_err"] = str(e)
+            out["price_endpoints"][tag] = info
+        except Exception as e:
+            out["price_endpoints"][tag] = {"exc": repr(e)}
 
-    # basket card.json — контент/название
-    vol, part, host = nm // 100000, nm // 1000, wb_public._basket_host(nm)
-    url = f"https://{host}/vol{vol}/part{part}/{nm}/info/ru/card.json"
-    out["cardjson_url"] = url
-    try:
-        r = httpx.get(url, headers=ua, timeout=20)
-        out["cardjson_status"] = r.status_code
-        if r.status_code == 200:
-            j = r.json()
-            out["cardjson_keys"] = sorted(j.keys())[:30]
-            out["cardjson_name"] = j.get("imt_name")
-    except Exception as e:
-        out["cardjson_exc"] = repr(e)
-
+    # Скан basket-хостов для card.json (находим правильный для этого vol)
+    for n in range(1, 46):
+        host = f"basket-{n:02d}.wbbasket.ru"
+        url = f"https://{host}/vol{vol}/part{part}/{nm}/info/ru/card.json"
+        try:
+            r = httpx.get(url, headers=ua, timeout=8)
+            if r.status_code == 200:
+                out["basket_scan"] = {"host": host, "n": n}
+                break
+        except Exception:
+            continue
+    out["basket_computed"] = wb_public._basket_host(nm)
     return out
 
 
