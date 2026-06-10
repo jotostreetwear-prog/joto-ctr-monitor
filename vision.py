@@ -1,22 +1,30 @@
-"""Определение размерной сетки на 4-м фото карточки через Claude Vision.
+"""Определение размерной сетки на 4-м фото карточки.
 
-Скачивает изображение по ссылке из Content API и спрашивает у vision-модели,
-есть ли на нём размерная сетка (таблица размеров). Результат кэшируется по
-URL фото, чтобы не дёргать модель при каждом пересчёте чек-листа.
+Режим выбирается автоматически по доступным ключам (от точного к запасному):
+  1. Google Gemini — бесплатный тариф, хорошая точность. GEMINI_API_KEY.
+  2. Claude Vision — точно, но платно. ANTHROPIC_API_KEY.
+  3. OCR (Tesseract) — бесплатно, без ключей, точность пониже.
+
+Результат кэшируется по URL фото, чтобы не анализировать одно и то же повторно.
 """
 
 import os
+import io
 import json
 import base64
 import hashlib
+import shutil
 import httpx
 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-# Дешёвая и быстрая модель достаточно для бинарного «да/нет»
 VISION_MODEL = os.environ.get("VISION_MODEL", "claude-haiku-4-5-20251001")
 CACHE_PATH = os.environ.get("VISION_CACHE", "vision_cache.json")
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 _ALLOWED_MEDIA = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 PROMPT = (
@@ -26,9 +34,35 @@ PROMPT = (
     "Ответь строго одним словом: да или нет."
 )
 
+# Слова-маркеры размерной таблицы для OCR-режима
+SIZE_KEYWORDS = [
+    "размер", "обхват", "талия", "бедр", "груд", "длина", "ширина",
+    "рост", "стелька", "размерная", "таблица размеров", " см", "size",
+]
+
+
+def _ocr_available():
+    try:
+        import pytesseract  # noqa: F401
+        from PIL import Image  # noqa: F401
+        return shutil.which("tesseract") is not None
+    except Exception:
+        return False
+
 
 def enabled():
-    return bool(ANTHROPIC_API_KEY)
+    """Есть ли вообще способ определить сетку автоматически."""
+    return bool(GEMINI_API_KEY) or bool(ANTHROPIC_API_KEY) or _ocr_available()
+
+
+def mode():
+    if GEMINI_API_KEY:
+        return "gemini"
+    if ANTHROPIC_API_KEY:
+        return "vision"
+    if _ocr_available():
+        return "ocr"
+    return "off"
 
 
 def _load_cache():
@@ -47,26 +81,68 @@ def _save_cache(cache):
         print(f"Vision: не удалось сохранить кэш: {e}")
 
 
-def detect_size_grid(photo_url):
-    """True/False — есть ли размерная сетка. None, если определить не удалось."""
-    if not ANTHROPIC_API_KEY or not photo_url:
+def _download(photo_url):
+    r = httpx.get(photo_url, timeout=30, follow_redirects=True)
+    if r.status_code != 200:
+        print(f"Vision: фото {photo_url} -> {r.status_code}")
+        return None, None
+    media_type = (r.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+    if media_type not in _ALLOWED_MEDIA:
+        media_type = "image/jpeg"
+    return r.content, media_type
+
+
+def _ocr_grid(content):
+    """True/False по OCR. None при ошибке распознавания."""
+    try:
+        import pytesseract
+        from PIL import Image
+        img = Image.open(io.BytesIO(content))
+        text = pytesseract.image_to_string(img, lang="rus+eng").lower()
+        hits = sum(1 for k in SIZE_KEYWORDS if k in text)
+        return hits >= 2
+    except Exception as e:
+        print(f"Vision/OCR: ошибка распознавания: {e}")
         return None
 
-    cache = _load_cache()
-    key = hashlib.sha1(photo_url.encode()).hexdigest()
-    if key in cache:
-        return cache[key]
 
+def _gemini_grid(content, media_type):
+    """True/False по Google Gemini. None при ошибке."""
     try:
-        img = httpx.get(photo_url, timeout=30, follow_redirects=True)
-        if img.status_code != 200:
-            print(f"Vision: фото {photo_url} -> {img.status_code}")
+        b64 = base64.b64encode(content).decode()
+        resp = httpx.post(
+            f"{GEMINI_URL}/{GEMINI_MODEL}:generateContent",
+            params={"key": GEMINI_API_KEY},
+            headers={"content-type": "application/json"},
+            json={
+                "contents": [{
+                    "parts": [
+                        {"inline_data": {"mime_type": media_type, "data": b64}},
+                        {"text": PROMPT},
+                    ],
+                }],
+                "generationConfig": {"maxOutputTokens": 8, "temperature": 0},
+            },
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            print(f"Vision/Gemini: {resp.status_code}: {resp.text[:200]}")
             return None
-        media_type = (img.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
-        if media_type not in _ALLOWED_MEDIA:
-            media_type = "image/jpeg"
-        b64 = base64.b64encode(img.content).decode()
+        cands = resp.json().get("candidates") or []
+        if not cands:
+            return None
+        parts = (cands[0].get("content") or {}).get("parts") or [{}]
+        text = parts[0].get("text", "").strip().lower()
+        return text.startswith("да") or text.startswith("yes")
+    except Exception as e:
+        print(f"Vision/Gemini: ошибка анализа: {e}")
+        return None
 
+
+def _vision_grid(content, media_type):
+    """True/False по Claude Vision. None при ошибке."""
+    try:
+        b64 = base64.b64encode(content).decode()
         resp = httpx.post(
             ANTHROPIC_URL,
             headers={
@@ -93,9 +169,35 @@ def detect_size_grid(photo_url):
             print(f"Vision: Anthropic {resp.status_code}: {resp.text[:200]}")
             return None
         text = (resp.json().get("content") or [{}])[0].get("text", "").strip().lower()
-        result = text.startswith("да") or text.startswith("yes")
-        cache[key] = result
-        _save_cache(cache)
+        return text.startswith("да") or text.startswith("yes")
+    except Exception as e:
+        print(f"Vision: ошибка анализа: {e}")
+        return None
+
+
+def detect_size_grid(photo_url):
+    """True/False — есть ли размерная сетка. None, если определить не удалось."""
+    if not photo_url or not enabled():
+        return None
+
+    cache = _load_cache()
+    key = hashlib.sha1(photo_url.encode()).hexdigest()
+    if key in cache:
+        return cache[key]
+
+    try:
+        content, media_type = _download(photo_url)
+        if content is None:
+            return None
+        if GEMINI_API_KEY:
+            result = _gemini_grid(content, media_type)
+        elif ANTHROPIC_API_KEY:
+            result = _vision_grid(content, media_type)
+        else:
+            result = _ocr_grid(content)
+        if result is not None:
+            cache[key] = result
+            _save_cache(cache)
         return result
     except Exception as e:
         print(f"Vision: ошибка анализа {photo_url}: {e}")

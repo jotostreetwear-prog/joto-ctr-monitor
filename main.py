@@ -333,6 +333,7 @@ def checklist_data():
         "metrics": checklist.metrics_meta(),
         "computing": checklist.is_computing(),
         "vision": vision.enabled(),
+        "vision_mode": vision.mode(),
     })
 
 
