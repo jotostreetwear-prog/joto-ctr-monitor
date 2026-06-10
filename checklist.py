@@ -27,6 +27,13 @@ CHARS_THRESHOLD = int(os.environ.get("CHECKLIST_CHARS_MIN", "10"))
 # Минимальный рейтинг для «зелёной» метрики
 RATING_MIN = float(os.environ.get("CHECKLIST_RATING_MIN", "4.5"))
 
+# Префиксы артикулов, которые считаем тестовыми и не показываем в чек-листе
+TEST_PREFIXES = tuple(
+    p.strip().lower()
+    for p in os.environ.get("CHECKLIST_TEST_PREFIXES", "тест,test").split(",")
+    if p.strip()
+)
+
 # Файл с ручными отметками по «визуальным» метрикам: {nmID: {metric_key: bool}}
 OVERRIDES_PATH = os.environ.get("CHECKLIST_OVERRIDES", "overrides.json")
 
@@ -178,6 +185,14 @@ def _fetch_feedbacks_stats():
 
 # ===================== Подсчёт метрик =====================
 
+def _is_test_card(card):
+    """Тестовая/черновая карточка — по префиксу артикула (vendorCode)."""
+    if not TEST_PREFIXES:
+        return False
+    vc = (card.get("vendorCode") or "").strip().lower()
+    return vc.startswith(TEST_PREFIXES)
+
+
 def _photo_url(photo):
     """Ссылка на большое изображение из объекта фото Content API."""
     if isinstance(photo, dict):
@@ -274,6 +289,9 @@ def compute_checklist():
         for card in cards:
             nm_id = card.get("nmID")
             if not nm_id:
+                continue
+            # пропускаем тестовые/черновые карточки (артикул "тест", "test1" и т.п.)
+            if _is_test_card(card):
                 continue
             fb = feedbacks.get(nm_id, {})
             metrics = _auto_metrics(card, fb)

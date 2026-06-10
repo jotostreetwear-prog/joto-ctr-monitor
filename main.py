@@ -324,28 +324,12 @@ def checklist_page():
     return render_template("checklist.html")
 
 
-# Страница-установщик для Битрикс24: завершает установку приложения
-# (без вызова BX24.installFinish() приложение «висит» и пункт меню не создаётся).
-_BITRIX_INSTALL_HTML = """<!DOCTYPE html>
-<html lang="ru"><head><meta charset="utf-8">
-<script src="//api.bitrix24.com/api/v1/"></script></head>
-<body style="font-family:sans-serif;padding:24px">
-<p>Устанавливаем «Чек-лист карточек»…</p>
-<script>
-  try {
-    BX24.init(function(){
-      BX24.installFinish();
-    });
-  } catch (e) {
-    document.body.innerHTML += '<p>Готово. Можно закрыть окно.</p>';
-  }
-</script>
-</body></html>"""
-
-
+# Путь установки для Битрикс24. Отдаёт ту же страницу чек-листа: она и
+# завершает установку (BX24.installFinish), и сразу показывает таблицу —
+# поэтому неважно, какой путь прописан в настройках приложения.
 @app.route("/checklist/install", methods=["GET", "POST"])
 def checklist_install():
-    return _BITRIX_INSTALL_HTML
+    return render_template("checklist.html")
 
 
 @app.route("/checklist/data", methods=["GET"])
