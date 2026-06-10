@@ -357,6 +357,12 @@ def checklist_notify_now():
     return jsonify({"ok": True, "message": "Сводка чек-листа будет отправлена Татьяне"})
 
 
+@app.route("/checklist/debug", methods=["GET"])
+def checklist_debug():
+    """Диагностика доступа WB_API_TOKEN к Контенту/Ценам/Отзывам."""
+    return jsonify(checklist.diagnose())
+
+
 @app.route("/checklist/debug-public", methods=["GET"])
 def checklist_debug_public():
     """Сырые публичные ответы WB по артикулу — для донастройки парсинга."""
