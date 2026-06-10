@@ -172,7 +172,15 @@ document.getElementById('onlyIssues').onclick = function(){
   onlyIssues=!onlyIssues; this.classList.toggle('on',onlyIssues); renderRows();
 };
 
-if(embedded && window.BX24){ try{ BX24.init(function(){ resizeBX(); }); }catch(e){} }
+if(embedded && window.BX24){
+  try{
+    BX24.init(function(){
+      // дорегистрируем приложение в Битрикс24 (создаёт пункт левого меню)
+      try{ BX24.installFinish(); }catch(e){}
+      resizeBX();
+    });
+  }catch(e){}
+}
 load();
 </script>
 </body>
