@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чек-лист карточек</title>
+<style>
+  :root{
+    --bg:#eef2f6; --card:#fff; --ink:#1f2733; --muted:#8a94a6;
+    --green:#22c55e; --red:#ef4444; --orange:#f97316; --line:#eef1f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);padding:32px 40px}
+  h1{font-size:28px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 24px}
+  .stats{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px}
+  .stat{background:var(--card);border-radius:14px;padding:20px 24px;flex:1;min-width:180px;
+    box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  .stat .lbl{color:var(--muted);font-size:14px;margin-bottom:10px}
+  .stat .val{font-size:38px;font-weight:700}
+  .stat .val.orange{color:var(--orange)} .stat .val.green{color:var(--green)} .stat .val.red{color:var(--red)}
+  .stat .val small{font-size:20px}
+  .bar{background:var(--card);border-radius:14px;padding:16px 24px;display:flex;align-items:center;
+    justify-content:space-between;margin-bottom:18px;box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  .toggle{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;font-weight:600}
+  .sw{width:42px;height:24px;border-radius:12px;background:#d4dae3;position:relative;transition:.2s}
+  .sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+    background:#fff;transition:.2s}
+  .toggle.on .sw{background:var(--green)} .toggle.on .sw::after{left:21px}
+  .checked{color:var(--muted)} .checked b{color:var(--ink)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}
+  .wrap{background:var(--card);border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  table{border-collapse:collapse;width:100%;min-width:1100px}
+  th,td{padding:14px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card);vertical-align:bottom}
+  th.left,td.left{text-align:left;padding-left:24px}
+  .name{font-weight:700;color:var(--orange)} .vc{color:var(--muted);font-size:12px}
+  .sq{display:inline-block;width:26px;height:26px;border-radius:7px}
+  .sq.g{background:var(--green)} .sq.r{background:var(--red)}
+  .sq.click{cursor:pointer;outline:2px solid transparent}
+  .sq.click:hover{outline:2px solid #c3cbd6}
+  .score{font-weight:700;font-size:15px}
+  .pbar{height:4px;border-radius:2px;background:#e6eaf0;margin-top:6px;overflow:hidden}
+  .pbar > i{display:block;height:100%;border-radius:2px}
+  .empty{padding:60px;text-align:center;color:var(--muted)}
+  button.refresh{background:var(--ink);color:#fff;border:0;border-radius:10px;padding:10px 16px;
+    cursor:pointer;font-weight:600}
+  button.refresh:disabled{opacity:.5;cursor:default}
+  .legend{font-size:12px;color:var(--muted);margin-top:14px}
+</style>
+</head>
+<body>
+  <h1>Чек-лист карточек</h1>
+  <p class="sub">Готовность карточек по артикулам — 13 метрик и итоговый балл</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="bar">
+    <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
+    <div style="display:flex;align-items:center;gap:18px">
+      <span class="checked"><span class="dot"></span>Проверено: <b id="checkedAt">—</b></span>
+      <button class="refresh" id="refreshBtn" onclick="refresh()">Обновить</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"><tr><td class="empty" colspan="15">Загрузка…</td></tr></tbody>
+    </table>
+  </div>
+  <p class="legend">Зелёные клетки у визуальных метрик (сертификаты, сетка, рекомендации, закреп. отзывы)
+     можно переключать кликом — отметка сохраняется.</p>
+
+<script>
+let META=[], DATA=null, onlyIssues=false;
+
+const fmt = n => (n==null?'—':n);
+
+function color(score){ return score>=90?'var(--green)':score>=60?'var(--orange)':'var(--red)'; }
+
+function renderStats(s){
+  const cards=[
+    ['Средний балл', s.avg_score+'<small>%</small>','orange'],
+    ['Всего артикулов', s.total,''],
+    ['Полностью готовы', s.ready,'green'],
+    ['С недочётами', s.with_issues,'red'],
+    ['Всего красных', s.total_reds,'red'],
+  ];
+  document.getElementById('stats').innerHTML = cards.map(([l,v,c])=>
+    `<div class="stat"><div class="lbl">${l}</div><div class="val ${c}">${v}</div></div>`).join('');
+}
+
+function renderHead(){
+  document.getElementById('head').innerHTML =
+    '<th class="left">Артикул</th>' +
+    META.map(m=>`<th>${m.label.replace(/ /g,'<br>')}</th>`).join('') +
+    '<th>Балл</th>';
+}
+
+function renderRows(){
+  const rows = DATA.items.filter(it=>!onlyIssues || it.score<100);
+  if(!rows.length){
+    document.getElementById('rows').innerHTML =
+      `<tr><td class="empty" colspan="${META.length+2}">Нет артикулов для показа</td></tr>`;
+    return;
+  }
+  document.getElementById('rows').innerHTML = rows.map(it=>{
+    const cells = META.map(m=>{
+      const ok = it.metrics[m.key];
+      const editable = m.kind!=='auto';
+      const cls = 'sq '+(ok?'g':'r')+(editable?' click':'');
+      const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
+      return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
+    }).join('');
+    return `<tr>
+      <td class="left"><div class="name">${it.name}</div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>
+      ${cells}
+      <td><div class="score" style="color:${color(it.score)}">${it.score}%</div>
+          <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>
+    </tr>`;
+  }).join('');
+}
+
+function render(){
+  if(!DATA) return;
+  document.getElementById('checkedAt').textContent = DATA.checked_at || '—';
+  if(DATA.summary && DATA.summary.total!=null) renderStats(DATA.summary);
+  renderHead();
+  if(DATA.items && DATA.items.length) renderRows();
+  else document.getElementById('rows').innerHTML =
+    `<tr><td class="empty" colspan="${META.length+2}">${DATA.computing?'Идёт проверка карточек…':'Нет данных. Нажмите «Обновить».'}</td></tr>`;
+  const btn=document.getElementById('refreshBtn');
+  btn.disabled = !!DATA.computing;
+  btn.textContent = DATA.computing ? 'Проверяем…' : 'Обновить';
+}
+
+async function load(){
+  const r = await fetch('/checklist/data'); DATA = await r.json();
+  META = DATA.metrics || META; render();
+  if(DATA.computing) setTimeout(load, 4000);
+}
+
+async function refresh(){
+  await fetch('/checklist/refresh', {method:'POST'});
+  DATA.computing = true; render(); setTimeout(load, 1500);
+}
+
+async function toggle(nm, key, val){
+  await fetch('/checklist/override', {method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({nm_id:nm, metric:key, value:val})});
+  load();
+}
+
+document.getElementById('onlyIssues').onclick = function(){
+  onlyIssues=!onlyIssues; this.classList.toggle('on',onlyIssues); renderRows();
+};
+
+load();
+</script>
+</body>
+</html>
