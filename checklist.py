@@ -63,7 +63,6 @@ METRICS = [
     ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "parse"),
     ("recommendations","Рекомендации",      "manual"),
-    ("price",          "Цена",              "auto"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
     ("promo_block",    "Блокировка акций",  "manual"),
@@ -325,7 +324,6 @@ def compute_checklist():
     try:
         cards = _fetch_cards()
         feedbacks = _fetch_feedbacks_stats()
-        prices = _fetch_prices()
         overrides = _load_overrides()
 
         # Фаза 1 — быстрые авто-метрики, таблица показывается сразу
@@ -339,7 +337,6 @@ def compute_checklist():
                 continue
             fb = feedbacks.get(nm_id, {})
             metrics = _auto_metrics(card, fb)
-            metrics["price"] = (prices.get(nm_id) or 0) > 0
             ov = overrides.get(str(nm_id), {})
             # медленные метрики пока из ручных отметок (уточнятся в фазе 2)
             for key in MANUAL_KEYS:
