@@ -54,7 +54,7 @@
 </head>
 <body>
   <h1>Чек-лист карточек</h1>
-  <p class="sub">Готовность карточек по артикулам — 13 метрик и итоговый балл</p>
+  <p class="sub" id="sub">Готовность карточек по артикулам</p>
 
   <div class="stats" id="stats"></div>
 
@@ -105,6 +105,8 @@ function renderStats(s){
 }
 
 function renderHead(){
+  document.getElementById('sub').textContent =
+    `Готовность карточек по артикулам — ${META.length} метрик и итоговый балл`;
   document.getElementById('head').innerHTML =
     '<th class="left">Артикул</th>' +
     META.map(m=>`<th>${m.label.replace(/ /g,'<br>')}</th>`).join('') +
