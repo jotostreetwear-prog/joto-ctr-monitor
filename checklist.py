@@ -20,6 +20,7 @@ import wb_public
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 
 CONTENT_API = "https://content-api.wildberries.ru"
+PRICES_API = "https://discounts-prices-api.wildberries.ru"
 FEEDBACKS_API = "https://feedbacks-api.wildberries.ru"
 
 # Сколько заполненных характеристик считаем достаточным для «зелёной» метрики
@@ -59,6 +60,7 @@ METRICS = [
     ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "parse"),
     ("recommendations","Рекомендации",      "manual"),
+    ("price",          "Цена",              "auto"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
     ("promo_block",    "Блокировка акций",  "manual"),
@@ -142,6 +144,40 @@ def _fetch_cards():
         time.sleep(0.3)
     print(f"Чек-лист: получено карточек {len(cards)}")
     return cards
+
+
+def _fetch_prices():
+    """nmID -> цена со скидкой (или базовая). Пусто при ошибке/нет скоупа."""
+    headers = {"Authorization": WB_API_TOKEN}
+    prices = {}
+    offset = 0
+    while True:
+        try:
+            resp = httpx.get(
+                f"{PRICES_API}/api/v2/list/goods/filter",
+                headers=headers, params={"limit": 1000, "offset": offset}, timeout=30,
+            )
+        except Exception as e:
+            print(f"Чек-лист: ошибка Prices API: {e}")
+            break
+        if resp.status_code != 200:
+            print(f"Чек-лист: Prices API {resp.status_code}: {resp.text[:200]}")
+            break
+        goods = (resp.json().get("data") or {}).get("listGoods") or []
+        if not goods:
+            break
+        for g in goods:
+            nm = g.get("nmID")
+            sizes = g.get("sizes") or []
+            price = 0
+            if sizes:
+                price = sizes[0].get("discountedPrice") or sizes[0].get("price") or 0
+            prices[nm] = price
+        if len(goods) < 1000:
+            break
+        offset += 1000
+        time.sleep(0.6)  # лимит цен: 10 запросов / 6 сек
+    return prices
 
 
 def _fetch_feedbacks_stats():
@@ -286,6 +322,7 @@ def compute_checklist():
     try:
         cards = _fetch_cards()
         feedbacks = _fetch_feedbacks_stats()
+        prices = _fetch_prices()
         overrides = _load_overrides()
 
         # Фаза 1 — быстрые авто-метрики, таблица показывается сразу
@@ -299,6 +336,7 @@ def compute_checklist():
                 continue
             fb = feedbacks.get(nm_id, {})
             metrics = _auto_metrics(card, fb)
+            metrics["price"] = (prices.get(nm_id) or 0) > 0
             ov = overrides.get(str(nm_id), {})
             # медленные метрики пока из ручных отметок (уточнятся в фазе 2)
             for key in MANUAL_KEYS:
@@ -394,6 +432,22 @@ def diagnose():
             out["content_error"] = r.text[:300]
     except Exception as e:
         out["content_exc"] = str(e)
+
+    # Цены — статус + сырой пример товара (ищем поле блокировки акций)
+    try:
+        r = httpx.get(
+            f"{PRICES_API}/api/v2/list/goods/filter",
+            headers=headers, params={"limit": 10, "offset": 0}, timeout=30,
+        )
+        out["prices_status"] = r.status_code
+        if r.status_code == 200:
+            goods = (r.json().get("data") or {}).get("listGoods") or []
+            out["prices_goods"] = len(goods)
+            out["prices_sample"] = goods[0] if goods else None
+        else:
+            out["prices_error"] = r.text[:300]
+    except Exception as e:
+        out["prices_exc"] = str(e)
 
     # Отзывы
     try:
