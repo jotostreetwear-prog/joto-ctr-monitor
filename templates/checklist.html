@@ -61,7 +61,10 @@
   <div class="bar">
     <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
     <div style="display:flex;align-items:center;gap:18px">
-      <span class="checked"><span class="dot"></span>Проверено: <b id="checkedAt">—</b></span>
+      <div style="text-align:right">
+        <span class="checked"><span class="dot"></span>Проверено: <b id="checkedAt">—</b></span>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Обновляется автоматически раз в день</div>
+      </div>
       <button class="refresh" id="refreshBtn" onclick="refresh()">Обновить</button>
     </div>
   </div>
