@@ -107,6 +107,29 @@ def _save_overrides(data):
         print(f"Чек-лист: не удалось сохранить overrides: {e}")
 
 
+def overrides_info():
+    """Диагностика хранения ручных отметок: путь, права записи, содержимое."""
+    d = os.path.dirname(OVERRIDES_PATH) or "."
+    info = {
+        "path": OVERRIDES_PATH,
+        "data_volume_mounted": os.path.isdir("/data"),
+        "dir": d,
+        "dir_exists": os.path.isdir(d),
+        "file_exists": os.path.exists(OVERRIDES_PATH),
+        "overrides": _load_overrides(),
+    }
+    try:
+        os.makedirs(d, exist_ok=True)
+        test = os.path.join(d, ".w_test")
+        with open(test, "w") as f:
+            f.write("ok")
+        os.remove(test)
+        info["write_test"] = "ok"
+    except Exception as e:
+        info["write_test"] = f"FAIL: {e}"
+    return info
+
+
 def set_override(nm_id, metric_key, value):
     """Выставить ручную отметку по визуальной метрике."""
     if metric_key not in MANUAL_KEYS:
