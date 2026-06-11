@@ -44,11 +44,24 @@ TEST_PREFIXES = tuple(
     if p.strip()
 )
 
+# Фильтр по тегам WB: оставляем только карточки с тегом, содержащим одно из слов
+# (по умолчанию «актив» и «новин» — активные и новинки). Пусто = показывать все.
+TAG_KEYWORDS = tuple(
+    k.strip().lower()
+    for k in os.environ.get("CHECKLIST_TAG_KEYWORDS", "актив,новин").split(",")
+    if k.strip()
+)
+
 # Файл с ручными отметками по «визуальным» метрикам: {nmID: {metric_key: bool}}
-# Где хранить ручные отметки. Если подключён Railway Volume на /data — пишем
-# туда (тогда отметки переживают редеплои). Иначе — локальный файл (временный).
-OVERRIDES_PATH = os.environ.get("CHECKLIST_OVERRIDES") or (
-    "/data/overrides.json" if os.path.isdir("/data") else "overrides.json"
+# Где хранить ручные отметки. Railway сообщает путь подключённого тома в
+# RAILWAY_VOLUME_MOUNT_PATH — пишем туда (отметки переживают редеплои).
+# Фолбэк: /data, если есть, иначе локальный временный файл.
+_RAILWAY_VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+OVERRIDES_PATH = (
+    os.environ.get("CHECKLIST_OVERRIDES")
+    or (os.path.join(_RAILWAY_VOL, "overrides.json") if _RAILWAY_VOL
+        else "/data/overrides.json" if os.path.isdir("/data")
+        else "overrides.json")
 )
 
 # Определение метрик: (ключ, подпись, источник)
@@ -112,6 +125,7 @@ def overrides_info():
     d = os.path.dirname(OVERRIDES_PATH) or "."
     info = {
         "path": OVERRIDES_PATH,
+        "railway_volume_mount_path": _RAILWAY_VOL or "(не задан)",
         "data_volume_mounted": os.path.isdir("/data"),
         "dir": d,
         "dir_exists": os.path.isdir(d),
@@ -270,6 +284,14 @@ def _is_test_card(card):
     return vc.startswith(TEST_PREFIXES)
 
 
+def _passes_tag_filter(card):
+    """True, если у карточки есть тег WB из списка (активные/новинки)."""
+    if not TAG_KEYWORDS:
+        return True
+    names = " ".join((t.get("name") or "") for t in (card.get("tags") or [])).lower()
+    return any(k in names for k in TAG_KEYWORDS)
+
+
 def _photos(card):
     """Список фото карточки — поле может называться photos или mediaFiles."""
     return card.get("photos") or card.get("mediaFiles") or []
@@ -377,6 +399,9 @@ def compute_checklist():
             # пропускаем тестовые/черновые карточки (артикул "тест", "test1" и т.п.)
             if _is_test_card(card):
                 continue
+            # оставляем только активные/новинки по тегам WB
+            if not _passes_tag_filter(card):
+                continue
             fb = feedbacks.get(nm_id, {})
             metrics = _auto_metrics(card, fb)
             ov = overrides.get(str(nm_id), {})
@@ -424,6 +449,23 @@ def is_computing():
 
 def metrics_meta():
     return [{"key": k, "label": label, "kind": kind} for k, label, kind in METRICS]
+
+
+def tags_overview():
+    """Какие теги WB есть в кабинете и сколько артикулов останется после фильтра."""
+    cards = _fetch_cards()
+    counts = {}
+    for c in cards:
+        for t in c.get("tags") or []:
+            n = t.get("name") or "?"
+            counts[n] = counts.get(n, 0) + 1
+    after = sum(1 for c in cards if not _is_test_card(c) and _passes_tag_filter(c))
+    return {
+        "total_cards": len(cards),
+        "tag_counts": dict(sorted(counts.items(), key=lambda x: -x[1])),
+        "keywords": list(TAG_KEYWORDS),
+        "after_filter": after,
+    }
 
 
 def debug_first_card():

@@ -396,6 +396,12 @@ def checklist_debug():
     return jsonify(checklist.diagnose())
 
 
+@app.route("/checklist/tags", methods=["GET"])
+def checklist_tags():
+    """Список тегов WB в кабинете и сколько артикулов пройдёт фильтр активных."""
+    return jsonify(checklist.tags_overview())
+
+
 @app.route("/checklist/debug-card", methods=["GET"])
 def checklist_debug_card():
     """Сырая первая карточка Content API — для сверки имён полей (фото, видео)."""
