@@ -372,6 +372,11 @@ def checklist_refresh():
     return jsonify({"ok": True, "message": "Пересчёт чек-листа запущен"})
 
 
+@app.route("/checklist/overrides-info", methods=["GET"])
+def checklist_overrides_info():
+    return jsonify(checklist.overrides_info())
+
+
 @app.route("/checklist/override", methods=["POST"])
 def checklist_override():
     body = request.get_json(silent=True) or {}
