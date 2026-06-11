@@ -317,6 +317,11 @@ def _enrich(item, card, ov):
     # Рекомендации продавца — поле has_seller_recommendations из card.json
     if pub.get("recommendations") is not None:
         item["metrics"]["recommendations"] = pub["recommendations"]
+    # Ручные отметки менеджера имеют приоритет над авто — применяем последними,
+    # чтобы зелёные/красные квадратики не сбрасывались при «Обновить».
+    for k, v in (ov or {}).items():
+        if k in item["metrics"]:
+            item["metrics"][k] = bool(v)
     _recalc_item(item)
 
 
