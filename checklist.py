@@ -45,10 +45,15 @@ TEST_PREFIXES = tuple(
 )
 
 # Файл с ручными отметками по «визуальным» метрикам: {nmID: {metric_key: bool}}
-# Где хранить ручные отметки. Если подключён Railway Volume на /data — пишем
-# туда (тогда отметки переживают редеплои). Иначе — локальный файл (временный).
-OVERRIDES_PATH = os.environ.get("CHECKLIST_OVERRIDES") or (
-    "/data/overrides.json" if os.path.isdir("/data") else "overrides.json"
+# Где хранить ручные отметки. Railway сообщает путь подключённого тома в
+# RAILWAY_VOLUME_MOUNT_PATH — пишем туда (отметки переживают редеплои).
+# Фолбэк: /data, если есть, иначе локальный временный файл.
+_RAILWAY_VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+OVERRIDES_PATH = (
+    os.environ.get("CHECKLIST_OVERRIDES")
+    or (os.path.join(_RAILWAY_VOL, "overrides.json") if _RAILWAY_VOL
+        else "/data/overrides.json" if os.path.isdir("/data")
+        else "overrides.json")
 )
 
 # Определение метрик: (ключ, подпись, источник)
@@ -112,6 +117,7 @@ def overrides_info():
     d = os.path.dirname(OVERRIDES_PATH) or "."
     info = {
         "path": OVERRIDES_PATH,
+        "railway_volume_mount_path": _RAILWAY_VOL or "(не задан)",
         "data_volume_mounted": os.path.isdir("/data"),
         "dir": d,
         "dir_exists": os.path.isdir(d),
