@@ -45,7 +45,11 @@ TEST_PREFIXES = tuple(
 )
 
 # Файл с ручными отметками по «визуальным» метрикам: {nmID: {metric_key: bool}}
-OVERRIDES_PATH = os.environ.get("CHECKLIST_OVERRIDES", "overrides.json")
+# Где хранить ручные отметки. Если подключён Railway Volume на /data — пишем
+# туда (тогда отметки переживают редеплои). Иначе — локальный файл (временный).
+OVERRIDES_PATH = os.environ.get("CHECKLIST_OVERRIDES") or (
+    "/data/overrides.json" if os.path.isdir("/data") else "overrides.json"
+)
 
 # Определение метрик: (ключ, подпись, источник)
 #   auto   — считается из официального WB API
@@ -94,6 +98,9 @@ def _load_overrides():
 
 def _save_overrides(data):
     try:
+        d = os.path.dirname(OVERRIDES_PATH)
+        if d:
+            os.makedirs(d, exist_ok=True)
         with open(OVERRIDES_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
     except Exception as e:
