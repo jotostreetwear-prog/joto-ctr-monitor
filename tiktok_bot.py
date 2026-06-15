@@ -17,7 +17,7 @@ import time
 import threading
 
 import schedule
-from flask import Flask, request, jsonify, render_template, redirect
+from flask import Flask, request, jsonify, render_template, redirect, Response, abort
 
 import tiktok
 
@@ -27,6 +27,21 @@ app = Flask(__name__)
 @app.route("/", methods=["GET"])
 def index():
     return redirect("/tiktok")
+
+
+@app.route("/<fname>")
+def tiktok_site_verification(fname):
+    """Отдаёт файл-подпись для верификации домена в TikTok (URL prefix).
+
+    TikTok запрашивает файл вида /tiktok<код>.txt с одной строкой
+    'tiktok-developers-site-verification=<код>'. Содержимое выводится из имени
+    файла, поэтому повторная верификация с новым кодом тоже сработает без правок.
+    """
+    if fname.startswith("tiktok") and fname.endswith(".txt"):
+        code = fname[len("tiktok"):-len(".txt")]
+        return Response(f"tiktok-developers-site-verification={code}\n",
+                        mimetype="text/plain")
+    abort(404)
 
 
 @app.route("/tiktok", methods=["GET", "POST"])
