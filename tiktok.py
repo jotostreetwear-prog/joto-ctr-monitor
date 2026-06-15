@@ -23,6 +23,8 @@ from datetime import datetime, timezone
 
 import httpx
 
+import yandex
+
 CLIENT_KEY = os.environ.get("TIKTOK_CLIENT_KEY", "").strip()
 CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET", "").strip()
 # Базовый публичный адрес приложения (Railway), например https://app.up.railway.app
@@ -196,26 +198,86 @@ def get_queue():
     return _read_json(QUEUE_FILE, [])
 
 
+def _new_item(**fields):
+    item = {
+        "id": int(time.time() * 1000),
+        "source": "url",          # "url" (PULL_FROM_URL) или "yandex" (FILE_UPLOAD)
+        "video_url": "",          # для source=url
+        "yandex_public_key": "",  # для source=yandex
+        "yandex_path": "",        # для source=yandex
+        "name": "",
+        "caption": "",
+        "publish_at": "",
+        "status": "scheduled",
+        "publish_id": None,
+        "error": None,
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    item.update(fields)
+    return item
+
+
 def add_to_queue(video_url, caption, publish_at):
-    """Ставит ролик в очередь.
+    """Ставит ролик в очередь по прямой ссылке (PULL_FROM_URL).
 
     publish_at — строка ISO в UTC (например 2026-06-15T18:30). Сравнивается с
     текущим UTC-временем сервера. МСК = UTC+3, учитывай при выборе времени.
     """
     with _lock:
         queue = get_queue()
-        queue.append({
-            "id": int(time.time() * 1000),
-            "video_url": video_url.strip(),
-            "caption": (caption or "").strip(),
-            "publish_at": publish_at.strip(),
-            "status": "scheduled",
-            "publish_id": None,
-            "error": None,
-            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        })
+        # небольшая пауза, чтобы id не совпали при пакетном добавлении
+        time.sleep(0.001)
+        queue.append(_new_item(
+            source="url",
+            video_url=video_url.strip(),
+            caption=(caption or "").strip(),
+            publish_at=publish_at.strip(),
+        ))
         _write_json(QUEUE_FILE, queue)
     return True
+
+
+def import_yandex_folder(folder_url, start_at, interval_hours, caption_template=""):
+    """Импортирует видео из публичной папки Яндекс.Диска в очередь.
+
+    Каждому ролику назначается время: start_at, start_at+interval, +2*interval …
+    Уже добавленные ранее файлы (по пути) пропускаются. В подписи можно
+    использовать {name} — подставится имя файла без расширения.
+    Возвращает (количество_добавленных, всего_в_папке).
+    """
+    from datetime import timedelta
+    folder_url = folder_url.strip()
+    videos = yandex.list_videos(folder_url)
+    start = _parse_dt(start_at) or datetime.now(timezone.utc)
+    try:
+        step = timedelta(hours=float(interval_hours))
+    except (TypeError, ValueError):
+        step = timedelta(hours=24)
+
+    with _lock:
+        queue = get_queue()
+        existing = {i.get("yandex_path") for i in queue if i.get("source") == "yandex"}
+        added = 0
+        slot = start
+        for v in videos:
+            if v["path"] in existing:
+                continue
+            stem = v["name"].rsplit(".", 1)[0]
+            caption = (caption_template or "").replace("{name}", stem)
+            time.sleep(0.001)
+            queue.append(_new_item(
+                source="yandex",
+                yandex_public_key=folder_url,
+                yandex_path=v["path"],
+                name=v["name"],
+                caption=caption.strip(),
+                publish_at=slot.isoformat(timespec="minutes"),
+            ))
+            existing.add(v["path"])
+            slot = slot + step
+            added += 1
+        _write_json(QUEUE_FILE, queue)
+    return added, len(videos)
 
 
 def remove_from_queue(item_id):
@@ -237,46 +299,113 @@ def _update_item(item_id, **fields):
 
 # ===================== ПУБЛИКАЦИЯ =====================
 
+def _post_info(caption):
+    return {
+        "title": caption or "",
+        "privacy_level": PRIVACY,
+        "disable_duet": False,
+        "disable_comment": False,
+        "disable_stitch": False,
+    }
+
+
+def _init(token, payload):
+    """Дёргает publish/video/init. Возвращает (ok, data_или_ошибка)."""
+    resp = httpx.post(
+        INIT_URL,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=60,
+    )
+    data = resp.json()
+    err = (data.get("error") or {}).get("code")
+    if err and err != "ok":
+        msg = (data.get("error") or {}).get("message", "")
+        print(f"TikTok: init ошибка {err}: {msg}")
+        return False, f"{err}: {msg}"
+    return True, data.get("data") or {}
+
+
 def publish_item(item):
-    """Создаёт задачу публикации Direct Post. Возвращает (ok, publish_id|ошибка)."""
+    """Публикует ролик нужным способом. Возвращает (ok, publish_id|ошибка)."""
     token = valid_access_token()
     if not token:
         return False, "Нет действующего токена — переавторизуй TikTok"
-
-    payload = {
-        "post_info": {
-            "title": item.get("caption", ""),
-            "privacy_level": PRIVACY,
-            "disable_duet": False,
-            "disable_comment": False,
-            "disable_stitch": False,
-        },
-        "source_info": {
-            "source": "PULL_FROM_URL",
-            "video_url": item["video_url"],
-        },
-    }
     try:
-        resp = httpx.post(
-            INIT_URL,
-            headers={"Authorization": f"Bearer {token}",
-                     "Content-Type": "application/json"},
-            json=payload,
-            timeout=60,
-        )
-        data = resp.json()
-        err = (data.get("error") or {}).get("code")
-        if err and err != "ok":
-            msg = (data.get("error") or {}).get("message", "")
-            print(f"TikTok: init ошибка {err}: {msg}")
-            return False, f"{err}: {msg}"
-        publish_id = (data.get("data") or {}).get("publish_id")
-        if not publish_id:
-            return False, f"нет publish_id: {resp.text[:200]}"
-        return True, publish_id
+        if item.get("source") == "yandex":
+            return _publish_yandex(token, item)
+        return _publish_pull(token, item)
     except Exception as e:
         print(f"TikTok: исключение при публикации: {e}")
         return False, str(e)
+
+
+def _publish_pull(token, item):
+    """Публикация по прямой ссылке (PULL_FROM_URL) — домен должен быть подтверждён."""
+    ok, data = _init(token, {
+        "post_info": _post_info(item.get("caption")),
+        "source_info": {"source": "PULL_FROM_URL", "video_url": item["video_url"]},
+    })
+    if not ok:
+        return False, data
+    publish_id = data.get("publish_id")
+    return (True, publish_id) if publish_id else (False, "нет publish_id")
+
+
+# Размеры чанков по правилам TikTok: видео ≤ 64 МБ грузим одним куском,
+# крупнее — кусками по 10 МБ (последний кусок забирает остаток).
+_MB = 1024 * 1024
+
+
+def _publish_yandex(token, item):
+    """Скачивает файл с Яндекс.Диска и заливает в TikTok (FILE_UPLOAD)."""
+    href = yandex.download_url(item["yandex_public_key"], item["yandex_path"])
+    if not href:
+        return False, "не удалось получить ссылку на файл Яндекс.Диска"
+    video = yandex.download_bytes(href)
+    size = len(video)
+    if size == 0:
+        return False, "пустой файл"
+
+    if size <= 64 * _MB:
+        chunk_size, total_chunks = size, 1
+    else:
+        chunk_size = 10 * _MB
+        total_chunks = size // chunk_size  # последний кусок добирает остаток
+
+    ok, data = _init(token, {
+        "post_info": _post_info(item.get("caption")),
+        "source_info": {
+            "source": "FILE_UPLOAD",
+            "video_size": size,
+            "chunk_size": chunk_size,
+            "total_chunk_count": total_chunks,
+        },
+    })
+    if not ok:
+        return False, data
+    publish_id = data.get("publish_id")
+    upload_url = data.get("upload_url")
+    if not publish_id or not upload_url:
+        return False, "init не вернул upload_url"
+
+    for idx in range(total_chunks):
+        start = idx * chunk_size
+        end = size - 1 if idx == total_chunks - 1 else start + chunk_size - 1
+        chunk = video[start:end + 1]
+        put = httpx.put(
+            upload_url,
+            content=chunk,
+            headers={
+                "Content-Type": "video/mp4",
+                "Content-Range": f"bytes {start}-{end}/{size}",
+                "Content-Length": str(len(chunk)),
+            },
+            timeout=300,
+        )
+        if put.status_code not in (200, 201, 206):
+            return False, f"загрузка чанка {idx}: {put.status_code} {put.text[:200]}"
+    return True, publish_id
 
 
 def process_due():

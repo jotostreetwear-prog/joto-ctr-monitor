@@ -49,7 +49,30 @@
   </div>
 
   <div class="panel">
-    <h3 style="margin:0 0 4px">Добавить ролик в очередь</h3>
+    <h3 style="margin:0 0 4px">Импорт из папки Яндекс.Диска</h3>
+    <p class="hint" style="margin:0 0 6px">Бот сам скачает ролики из папки и зальёт в TikTok. Видео ставятся по очереди с заданным интервалом.</p>
+    <label>Ссылка на публичную папку Яндекс.Диска</label>
+    <input id="yaUrl" placeholder="https://disk.yandex.ru/d/...">
+    <label>Подпись (можно использовать {name} — имя файла)</label>
+    <input id="yaCaption" placeholder="Новый дроп JOTO {name} #streetwear">
+    <div class="row">
+      <div style="flex:1;min-width:200px">
+        <label style="margin-top:0">Время первого поста (UTC; МСК = UTC+3)</label>
+        <input id="yaStart" type="datetime-local">
+      </div>
+      <div style="width:160px">
+        <label style="margin-top:0">Интервал, часов</label>
+        <input id="yaInterval" type="number" value="24" min="1">
+      </div>
+    </div>
+    <div class="row">
+      <button onclick="importYandex()">Импортировать в очередь</button>
+      <span id="yaMsg" class="hint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 4px">Добавить один ролик по ссылке</h3>
     <label>Ссылка на видео (публичный URL, mp4)</label>
     <input id="videoUrl" placeholder="https://...mp4">
     <label>Подпись к ролику</label>
@@ -125,6 +148,20 @@ async function addToQueue(){
 async function del(id){
   await fetch('/tiktok/queue/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});
   load();
+}
+async function importYandex(){
+  const body = {
+    folder_url: document.getElementById('yaUrl').value,
+    caption: document.getElementById('yaCaption').value,
+    start_at: document.getElementById('yaStart').value,
+    interval_hours: parseFloat(document.getElementById('yaInterval').value) || 24,
+  };
+  const msg = document.getElementById('yaMsg');
+  msg.textContent = 'Читаю папку…';
+  const r = await fetch('/tiktok/yandex/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json();
+  if(d.ok){ msg.textContent = 'Добавлено '+d.added+' из '+d.total+' видео ✓'; load(); }
+  else { msg.textContent = d.error || 'Ошибка'; }
 }
 async function publishNow(){
   await fetch('/tiktok/publish-now',{method:'POST'});

@@ -86,6 +86,25 @@ def tiktok_queue_delete():
     return jsonify({"ok": True})
 
 
+@app.route("/tiktok/yandex/import", methods=["POST"])
+def tiktok_yandex_import():
+    """Импортирует видео из публичной папки Яндекс.Диска в очередь по расписанию."""
+    body = request.get_json(silent=True) or {}
+    folder_url = (body.get("folder_url") or "").strip()
+    start_at = (body.get("start_at") or "").strip()
+    if not folder_url or not start_at:
+        return jsonify({"ok": False, "error": "Нужны folder_url и start_at"}), 400
+    try:
+        added, total = tiktok.import_yandex_folder(
+            folder_url, start_at,
+            body.get("interval_hours", 24),
+            body.get("caption", ""),
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "added": added, "total": total})
+
+
 @app.route("/tiktok/publish-now", methods=["POST"])
 def tiktok_publish_now():
     """Сразу публикует «созревшие» записи, не дожидаясь планировщика."""
