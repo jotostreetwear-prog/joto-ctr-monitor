@@ -41,8 +41,18 @@ CREATOR_INFO_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/que
 INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 
-TOKENS_FILE = "tiktok_tokens.json"
-QUEUE_FILE = "tiktok_queue.json"
+# Каталог для постоянного хранения токенов и очереди.
+# На Railway указывай путь смонтированного тома (Volume), напр. DATA_DIR=/data —
+# тогда токены и очередь переживут передеплой/перезапуск сервиса.
+DATA_DIR = (os.environ.get("DATA_DIR", ".").strip() or ".")
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except OSError as e:
+    print(f"TikTok: не удалось создать DATA_DIR={DATA_DIR}: {e}")
+    DATA_DIR = "."
+
+TOKENS_FILE = os.path.join(DATA_DIR, "tiktok_tokens.json")
+QUEUE_FILE = os.path.join(DATA_DIR, "tiktok_queue.json")
 
 _lock = threading.Lock()
 
