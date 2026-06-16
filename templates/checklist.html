@@ -102,6 +102,11 @@ function summarize(rows){
 
 function inCategory(it){ return category==='all' || it.category===category; }
 
+// «Недочёт» для фильтра — красный квадратик в автопроверках (не в ручных метриках)
+function hasAutoDefect(it){
+  return META.some(m => m.kind !== 'manual' && !it.metrics[m.key]);
+}
+
 function resizeBX(){
   if(!embedded || !window.BX24) return;
   try{
@@ -156,7 +161,7 @@ function onCat(){
 }
 
 function renderRows(){
-  const rows = DATA.items.filter(it=>inCategory(it) && (!onlyIssues || it.score<100));
+  const rows = DATA.items.filter(it=>inCategory(it) && (!onlyIssues || hasAutoDefect(it)));
   if(!rows.length){
     document.getElementById('rows').innerHTML =
       `<tr><td class="empty" colspan="${META.length+2}">Нет артикулов для показа</td></tr>`;
