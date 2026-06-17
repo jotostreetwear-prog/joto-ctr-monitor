@@ -11,9 +11,11 @@
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-    background:var(--bg);color:var(--ink);padding:18px 20px}
-  h1{font-size:28px;margin:0 0 6px}
-  .sub{color:var(--muted);margin:0 0 24px}
+    background:var(--bg);color:var(--ink);padding:18px 20px;font-size:15px;line-height:1.5}
+  h1{font-size:22px;font-weight:700;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
+  .exp{cursor:pointer;color:var(--muted);margin-right:4px;font-weight:700;display:inline-block}
+  .clabel{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
   .stats{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px}
   .stat{background:var(--card);border-radius:14px;padding:20px 24px;flex:1;min-width:180px;
     box-shadow:0 1px 3px rgba(20,30,50,.05)}
@@ -33,9 +35,9 @@
   .wrap{background:var(--card);border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(20,30,50,.05)}
   table{border-collapse:collapse;width:100%;min-width:940px;table-layout:fixed}
   th,td{padding:9px 3px;text-align:center;border-bottom:1px solid var(--line);font-size:11px}
-  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card);vertical-align:bottom}
+  th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;background:var(--card);vertical-align:bottom}
   th.left,td.left{text-align:left;padding-left:14px;width:230px}
-  .name{font-weight:700;color:var(--orange);font-size:18px;line-height:1.2} .vc{color:var(--muted);font-size:13px}
+  .name{font-weight:600;color:var(--orange);font-size:17px;line-height:1.2} .vc{color:var(--muted);font-size:13px}
   .name a{color:var(--orange);text-decoration:none} .name a:hover{text-decoration:underline}
   .sq{display:inline-block;width:22px;height:22px;border-radius:6px}
   .sq.g{background:var(--green)} .sq.r{background:var(--red)}
@@ -46,7 +48,7 @@
   .pbar > i{display:block;height:100%;border-radius:2px}
   .empty{padding:60px;text-align:center;color:var(--muted)}
   button.refresh{background:var(--ink);color:#fff;border:0;border-radius:10px;padding:10px 16px;
-    cursor:pointer;font-weight:600}
+    cursor:pointer;font-weight:600;font-size:15px}
   button.refresh:disabled{opacity:.5;cursor:default}
   .legend{font-size:12px;color:var(--muted);margin-top:14px}
 </style>
@@ -63,7 +65,7 @@
     <div style="display:flex;align-items:center;gap:20px">
       <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
       <select id="catSelect" onchange="onCat()" style="padding:9px 12px;border:1px solid #d4dae3;
-        border-radius:10px;font-size:14px;font-weight:600;color:var(--ink);background:#fff;cursor:pointer">
+        border-radius:10px;font-size:14.5px;font-weight:600;color:var(--ink);background:#fff;cursor:pointer">
         <option value="all">Все категории</option>
       </select>
       <span id="shownCount" style="font-size:13px;color:var(--muted)"></span>
@@ -171,7 +173,7 @@ function renderRows(){
       `<tr><td class="empty" colspan="${META.length+2}">Нет артикулов для показа</td></tr>`;
     return;
   }
-  document.getElementById('rows').innerHTML = rows.map(it=>{
+  document.getElementById('rows').innerHTML = rows.map((it,n)=>{
     const cells = META.map(m=>{
       const ok = it.metrics[m.key];
       const editable = m.kind!=='auto';
@@ -180,12 +182,26 @@ function renderRows(){
       return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
     }).join('');
     return `<tr>
-      <td class="left"><div class="name"><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>
+      <td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>
       ${cells}
       <td><div class="score" style="color:${color(it.score)}">${it.score}%</div>
           <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>
-    </tr>`;
+    </tr>
+    <tr id="d-${n}" style="display:none"><td class="left" colspan="${META.length+2}">${charsHtml(it)}</td></tr>`;
   }).join('');
+}
+
+function charsHtml(it){
+  const rows = Object.entries(it.chars||{}).map(([k,v])=>
+    `<tr><td style="padding:3px 18px 3px 0;color:var(--muted);font-size:14px;white-space:nowrap;vertical-align:top">${k}</td>`+
+    `<td style="padding:3px 0;font-size:15px">${v}</td></tr>`).join('');
+  return `<div style="padding:6px 4px 12px">
+    <table style="border:0;min-width:auto;width:auto;table-layout:auto">${rows||'<tr><td>Характеристики из карточки недоступны</td></tr>'}</table></div>`;
+}
+
+function toggleRow(n){
+  const d=document.getElementById('d-'+n);
+  if(d){ d.style.display = d.style.display==='none' ? '' : 'none'; resizeBX(); }
 }
 
 function render(){

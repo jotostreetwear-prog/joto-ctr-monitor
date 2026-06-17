@@ -416,11 +416,18 @@ def compute_checklist():
             for key in MANUAL_KEYS:
                 metrics[key] = bool(ov.get(key, MANUAL_DEFAULTS.get(key, False)))
             ordered = {k: metrics.get(k, False) for k, _, _ in METRICS}
+            # Реальные характеристики из кабинета WB (Content API, уже на русском)
+            chars = {}
+            for ch in card.get("characteristics") or []:
+                n, v = ch.get("name"), ch.get("value")
+                if n and v:
+                    chars[n] = ", ".join(map(str, v)) if isinstance(v, list) else str(v)
             item = {
                 "nm_id": nm_id,
                 "name": card.get("title") or card.get("vendorCode") or str(nm_id),
                 "vendor_code": card.get("vendorCode") or "",
                 "category": card.get("subjectName") or "Без категории",
+                "chars": chars,
                 "metrics": ordered,
             }
             _recalc_item(item)
