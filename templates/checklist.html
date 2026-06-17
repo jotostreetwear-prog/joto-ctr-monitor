@@ -19,6 +19,9 @@
   .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
   .exp{cursor:pointer;color:var(--muted);margin-right:4px;font-weight:700;display:inline-block}
   .clabel{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .tabs{display:flex;gap:8px}
+  .tab{font-size:15px;font-weight:600;padding:7px 14px;border-radius:9px;cursor:pointer;color:var(--muted);user-select:none}
+  .tab.active{background:var(--ink);color:#fff}
   .stats{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px}
   .stat{background:var(--card);border-radius:14px;padding:20px 24px;flex:1;min-width:180px;
     box-shadow:0 1px 3px rgba(20,30,50,.05)}
@@ -36,8 +39,8 @@
   .checked{color:var(--muted)} .checked b{color:var(--ink)}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}
   .wrap{background:var(--card);border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(20,30,50,.05)}
-  table{border-collapse:collapse;width:100%;min-width:940px;table-layout:fixed}
-  th,td{padding:9px 3px;text-align:center;border-bottom:1px solid var(--line);font-size:11px}
+  table{border-collapse:collapse;width:100%;min-width:780px}
+  th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line);font-size:11px}
   th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;background:var(--card);vertical-align:bottom}
   th.left,td.left{text-align:left;padding-left:14px;width:230px}
   .name{font-weight:600;color:var(--orange);font-size:17px;line-height:1.2} .vc{color:var(--muted);font-size:13px}
@@ -46,6 +49,8 @@
   .sq.g{background:var(--green)} .sq.r{background:var(--red)}
   .sq.click{cursor:pointer;outline:2px solid transparent}
   .sq.click:hover{outline:2px solid #c3cbd6}
+  .sq.na{background:#e6eaf0}
+  th.sep,td.sep{border-right:2px solid #d4dae3}
   .score{font-weight:700;font-size:13px}
   .pbar{height:4px;border-radius:2px;background:#e6eaf0;margin-top:6px;overflow:hidden}
   .pbar > i{display:block;height:100%;border-radius:2px}
@@ -76,7 +81,7 @@
     <div style="display:flex;align-items:center;gap:18px">
       <div style="text-align:right">
         <span class="checked"><span class="dot"></span>Проверено: <b id="checkedAt">—</b></span>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">Обновляется автоматически раз в день</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Обновляется автоматически каждые несколько часов</div>
       </div>
       <button class="refresh" id="refreshBtn" onclick="refresh()">Обновить</button>
     </div>
@@ -94,7 +99,7 @@
      Остальные метрики (включая рекомендации и размерную сетку) считаются автоматически из данных Wildberries.</p>
 
 <script>
-let META=[], DATA=null, onlyIssues=false, category='all';
+let META=[], DATA=null, onlyIssues=false, category='all', view='metrics', CHARCOLS=[];
 
 const embedded = window.self !== window.top;  // открыто внутри Битрикс24
 
@@ -111,6 +116,13 @@ function inCategory(it){ return category==='all' || it.category===category; }
 // «Недочёт» для фильтра — красный квадратик в автопроверках (не в ручных метриках)
 function hasAutoDefect(it){
   return META.some(m => m.kind !== 'manual' && !it.metrics[m.key]);
+}
+
+// Колонки характеристик — объединение всех названий по артикулам (частые слева)
+function computeCharCols(){
+  const freq={};
+  (DATA.items||[]).forEach(it=> (it.chars||[]).forEach(c=>{ freq[c.name]=(freq[c.name]||0)+1; }));
+  CHARCOLS = Object.keys(freq).sort((a,b)=> freq[b]-freq[a] || a.localeCompare(b,'ru'));
 }
 
 function resizeBX(){
@@ -138,16 +150,18 @@ function renderStats(s){
 }
 
 function renderHead(){
+  computeCharCols();
   document.getElementById('sub').textContent =
-    `Готовность карточек по артикулам — ${META.length} метрик и итоговый балл`;
+    `Готовность карточек по артикулам — ${META.length} метрик + ${CHARCOLS.length} характеристик`;
+  const metricCols = META.map(m=>{
+    const manual = m.kind==='manual'
+      ? '<div style="font-size:10px;color:var(--orange);font-weight:700;margin-top:4px">✋ вручную</div>' : '';
+    return `<th>${m.label.replace(/ /g,'<br>')}${manual}</th>`;
+  }).join('');
+  const charCols = CHARCOLS.map(n=>`<th title="${n}" style="color:var(--blue)">${n.replace(/ /g,'<br>')}</th>`).join('');
   document.getElementById('head').innerHTML =
-    '<th class="left">Артикул</th>' +
-    META.map(m=>{
-      const manual = m.kind==='manual'
-        ? '<div style="font-size:10px;color:var(--orange);font-weight:700;margin-top:4px">✋ вручную</div>' : '';
-      return `<th>${m.label.replace(/ /g,'<br>')}${manual}</th>`;
-    }).join('') +
-    '<th>Балл</th>';
+    '<th class="left">Артикул</th>' + metricCols +
+    '<th class="sep">Балл</th>' + charCols;
 }
 
 function populateCats(){
@@ -171,26 +185,32 @@ function renderRows(){
   const rows = base.filter(it=> !onlyIssues || hasAutoDefect(it));
   const sc = document.getElementById('shownCount');
   if(sc) sc.textContent = onlyIssues ? `Показано: ${rows.length} из ${base.length}` : '';
+  const cols = META.length + CHARCOLS.length + 2;
   if(!rows.length){
     document.getElementById('rows').innerHTML =
-      `<tr><td class="empty" colspan="${META.length+2}">Нет артикулов для показа</td></tr>`;
+      `<tr><td class="empty" colspan="${cols}">Нет артикулов для показа</td></tr>`;
     return;
   }
   document.getElementById('rows').innerHTML = rows.map((it,n)=>{
-    const cells = META.map(m=>{
+    const nameCell = `<td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>`;
+    const metricCells = META.map(m=>{
       const ok = it.metrics[m.key];
       const editable = m.kind!=='auto';
       const cls = 'sq '+(ok?'g':'r')+(editable?' click':'');
       const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
       return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
     }).join('');
-    return `<tr>
-      <td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>
-      ${cells}
-      <td><div class="score" style="color:${color(it.score)}">${it.score}%</div>
-          <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>
-    </tr>
-    <tr id="d-${n}" style="display:none"><td class="left" colspan="${META.length+2}">${charsHtml(it)}</td></tr>`;
+    const scoreCell = `<td class="sep"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
+        <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>`;
+    const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
+    const charCells = CHARCOLS.map(name=>{
+      const c = map[name];
+      const cls = !c ? 'sq na' : 'sq '+(c.filled?'g':'r');
+      const t = c ? (name+(c.value?': '+c.value:': не заполнено')) : name+' — не относится к категории';
+      return `<td><span class="${cls}" title="${t}"></span></td>`;
+    }).join('');
+    return `<tr>${nameCell}${metricCells}${scoreCell}${charCells}</tr>
+    <tr id="d-${n}" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
   }).join('');
 }
 
@@ -235,6 +255,9 @@ async function load(){
   META = DATA.metrics || META; render();
   if(DATA.computing) setTimeout(load, 4000);
 }
+
+// Авто-обновление открытой страницы каждые 5 минут (подтягивает свежий пересчёт)
+setInterval(()=>{ if(!DATA || !DATA.computing) load(); }, 5*60*1000);
 
 async function refresh(){
   await fetch('/checklist/refresh', {method:'POST'});

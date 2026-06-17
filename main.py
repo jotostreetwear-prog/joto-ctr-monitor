@@ -517,7 +517,11 @@ def run_scheduler():
     schedule.every(30).minutes.do(check_budgets)
     # Сводка по чек-листу карточек — раз в день
     schedule.every().day.at("07:00").do(notify_checklist)
-    print("Планировщик запущен — CTR в 09:00 МСК, бюджет каждые 30 мин, чек-лист в 10:00 МСК")
+    # Автоматический пересчёт чек-листа каждые N часов (по умолчанию 6)
+    refresh_h = int(os.environ.get("CHECKLIST_REFRESH_HOURS", "6"))
+    schedule.every(refresh_h).hours.do(checklist.compute_checklist)
+    print(f"Планировщик запущен — CTR в 09:00 МСК, бюджет каждые 30 мин, "
+          f"чек-лист: сводка в 10:00 МСК, авто-пересчёт каждые {refresh_h} ч")
     while True:
         schedule.run_pending()
         time.sleep(60)
