@@ -50,6 +50,7 @@
   .sq.click{cursor:pointer;outline:2px solid transparent}
   .sq.click:hover{outline:2px solid #c3cbd6}
   .sq.na{background:#e6eaf0}
+  th.sep,td.sep{border-right:2px solid #d4dae3}
   .score{font-weight:700;font-size:13px}
   .pbar{height:4px;border-radius:2px;background:#e6eaf0;margin-top:6px;overflow:hidden}
   .pbar > i{display:block;height:100%;border-radius:2px}
@@ -70,10 +71,6 @@
 
   <div class="bar">
     <div style="display:flex;align-items:center;gap:20px">
-      <div class="tabs">
-        <span class="tab active" id="tab-metrics" onclick="setView('metrics')">Метрики</span>
-        <span class="tab" id="tab-chars" onclick="setView('chars')">Характеристики</span>
-      </div>
       <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
       <select id="catSelect" onchange="onCat()" style="padding:9px 12px;border:1px solid #d4dae3;
         border-radius:10px;font-size:14.5px;font-weight:600;color:var(--ink);background:#fff;cursor:pointer">
@@ -116,9 +113,8 @@ function summarize(rows){
 
 function inCategory(it){ return category==='all' || it.category===category; }
 
-// «Недочёт» для фильтра — красный в автопроверках (метрики) или незаполненная характеристика
+// «Недочёт» для фильтра — красный квадратик в автопроверках (не в ручных метриках)
 function hasAutoDefect(it){
-  if(view==='chars') return (it.chars||[]).some(c=>!c.filled);
   return META.some(m => m.kind !== 'manual' && !it.metrics[m.key]);
 }
 
@@ -127,13 +123,6 @@ function computeCharCols(){
   const freq={};
   (DATA.items||[]).forEach(it=> (it.chars||[]).forEach(c=>{ freq[c.name]=(freq[c.name]||0)+1; }));
   CHARCOLS = Object.keys(freq).sort((a,b)=> freq[b]-freq[a] || a.localeCompare(b,'ru'));
-}
-
-function setView(v){
-  view = v;
-  document.getElementById('tab-metrics').classList.toggle('active', v==='metrics');
-  document.getElementById('tab-chars').classList.toggle('active', v==='chars');
-  renderHead(); renderRows();
 }
 
 function resizeBX(){
@@ -161,24 +150,18 @@ function renderStats(s){
 }
 
 function renderHead(){
-  const sub = document.getElementById('sub');
-  const head = document.getElementById('head');
-  if(view==='chars'){
-    computeCharCols();
-    sub.textContent = `Характеристики по артикулам — ${CHARCOLS.length} полей (зелёный — заполнено, красный — пусто)`;
-    head.innerHTML = '<th class="left">Артикул</th>' +
-      CHARCOLS.map(n=>`<th title="${n}">${n.replace(/ /g,'<br>')}</th>`).join('') +
-      '<th>Заполнено</th>';
-  } else {
-    sub.textContent = `Готовность карточек по артикулам — ${META.length} метрик и итоговый балл`;
-    head.innerHTML = '<th class="left">Артикул</th>' +
-      META.map(m=>{
-        const manual = m.kind==='manual'
-          ? '<div style="font-size:10px;color:var(--orange);font-weight:700;margin-top:4px">✋ вручную</div>' : '';
-        return `<th>${m.label.replace(/ /g,'<br>')}${manual}</th>`;
-      }).join('') +
-      '<th>Балл</th>';
-  }
+  computeCharCols();
+  document.getElementById('sub').textContent =
+    `Готовность карточек по артикулам — ${META.length} метрик + ${CHARCOLS.length} характеристик`;
+  const metricCols = META.map(m=>{
+    const manual = m.kind==='manual'
+      ? '<div style="font-size:10px;color:var(--orange);font-weight:700;margin-top:4px">✋ вручную</div>' : '';
+    return `<th>${m.label.replace(/ /g,'<br>')}${manual}</th>`;
+  }).join('');
+  const charCols = CHARCOLS.map(n=>`<th title="${n}" style="color:var(--blue)">${n.replace(/ /g,'<br>')}</th>`).join('');
+  document.getElementById('head').innerHTML =
+    '<th class="left">Артикул</th>' + metricCols +
+    '<th class="sep">Балл</th>' + charCols;
 }
 
 function populateCats(){
@@ -202,38 +185,31 @@ function renderRows(){
   const rows = base.filter(it=> !onlyIssues || hasAutoDefect(it));
   const sc = document.getElementById('shownCount');
   if(sc) sc.textContent = onlyIssues ? `Показано: ${rows.length} из ${base.length}` : '';
-  const cols = (view==='chars' ? CHARCOLS.length : META.length) + 2;
+  const cols = META.length + CHARCOLS.length + 2;
   if(!rows.length){
     document.getElementById('rows').innerHTML =
       `<tr><td class="empty" colspan="${cols}">Нет артикулов для показа</td></tr>`;
     return;
   }
-  const nameCell = (it,n)=>`<td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>`;
-
   document.getElementById('rows').innerHTML = rows.map((it,n)=>{
-    let cells, last;
-    if(view==='chars'){
-      const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
-      cells = CHARCOLS.map(name=>{
-        const c = map[name];
-        const cls = !c ? 'sq na' : 'sq '+(c.filled?'g':'r');
-        const t = c ? (name+(c.value?': '+c.value:'')) : name+' — не относится к категории';
-        return `<td><span class="${cls}" title="${t}"></span></td>`;
-      }).join('');
-      const list = it.chars||[]; const f = list.filter(c=>c.filled).length;
-      last = `<td><div class="score">${f}/${list.length}</div></td>`;
-    } else {
-      cells = META.map(m=>{
-        const ok = it.metrics[m.key];
-        const editable = m.kind!=='auto';
-        const cls = 'sq '+(ok?'g':'r')+(editable?' click':'');
-        const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
-        return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
-      }).join('');
-      last = `<td><div class="score" style="color:${color(it.score)}">${it.score}%</div>
-          <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>`;
-    }
-    return `<tr>${nameCell(it,n)}${cells}${last}</tr>
+    const nameCell = `<td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>`;
+    const metricCells = META.map(m=>{
+      const ok = it.metrics[m.key];
+      const editable = m.kind!=='auto';
+      const cls = 'sq '+(ok?'g':'r')+(editable?' click':'');
+      const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
+      return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
+    }).join('');
+    const scoreCell = `<td class="sep"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
+        <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>`;
+    const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
+    const charCells = CHARCOLS.map(name=>{
+      const c = map[name];
+      const cls = !c ? 'sq na' : 'sq '+(c.filled?'g':'r');
+      const t = c ? (name+(c.value?': '+c.value:': не заполнено')) : name+' — не относится к категории';
+      return `<td><span class="${cls}" title="${t}"></span></td>`;
+    }).join('');
+    return `<tr>${nameCell}${metricCells}${scoreCell}${charCells}</tr>
     <tr id="d-${n}" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
   }).join('');
 }
