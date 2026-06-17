@@ -66,6 +66,7 @@
         border-radius:10px;font-size:14px;font-weight:600;color:var(--ink);background:#fff;cursor:pointer">
         <option value="all">Все категории</option>
       </select>
+      <span id="shownCount" style="font-size:13px;color:var(--muted)"></span>
     </div>
     <div style="display:flex;align-items:center;gap:18px">
       <div style="text-align:right">
@@ -161,7 +162,10 @@ function onCat(){
 }
 
 function renderRows(){
-  const rows = DATA.items.filter(it=>inCategory(it) && (!onlyIssues || hasAutoDefect(it)));
+  const base = DATA.items.filter(inCategory);
+  const rows = base.filter(it=> !onlyIssues || hasAutoDefect(it));
+  const sc = document.getElementById('shownCount');
+  if(sc) sc.textContent = onlyIssues ? `Показано: ${rows.length} из ${base.length}` : '';
   if(!rows.length){
     document.getElementById('rows').innerHTML =
       `<tr><td class="empty" colspan="${META.length+2}">Нет артикулов для показа</td></tr>`;
