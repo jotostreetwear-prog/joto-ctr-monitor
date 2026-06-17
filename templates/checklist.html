@@ -206,9 +206,9 @@ function renderRows(){
     const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
     const charCells = CHARCOLS.map(name=>{
       const c = map[name];
-      const cls = !c ? 'sq na' : 'sq '+(c.filled?'g':'r');
-      const t = c ? (name+(c.value?': '+c.value:': не заполнено')) : name+' — не относится к категории';
-      return `<td><span class="${cls}" title="${t}"></span></td>`;
+      const filled = !!(c && c.filled);
+      const t = name + (filled ? ': '+c.value : ': не заполнено');
+      return `<td><span class="sq ${filled?'g':'r'}" title="${t}"></span></td>`;
     }).join('');
     return `<tr>${nameCell}${metricCells}${scoreCell}${charCells}</tr>
     <tr id="d-${n}" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
