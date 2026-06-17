@@ -84,7 +84,6 @@ METRICS = [
     ("rich_content",   "Рич-контент",       "auto"),
     ("certificates",   "Сертификаты",       "manual"),
     ("barcode",        "Баркод",            "auto"),
-    ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "parse"),
     ("recommendations","Рекомендации",      "parse"),
     ("rating",         "Рейтинг",           "auto"),
@@ -237,6 +236,57 @@ def _fetch_prices():
     return prices
 
 
+# Кэш полного списка характеристик по subjectID (названия на русском)
+_charcs_cache = {}
+
+
+def _subject_charcs(subject_id):
+    """Все возможные характеристики предмета (subjectID) — названия на русском."""
+    if not subject_id:
+        return []
+    if subject_id in _charcs_cache:
+        return _charcs_cache[subject_id]
+    headers = {"Authorization": WB_API_TOKEN}
+    names = []
+    try:
+        r = httpx.get(
+            f"{CONTENT_API}/content/v2/object/charcs/{subject_id}",
+            headers=headers, params={"locale": "ru"}, timeout=30,
+        )
+        if r.status_code == 200:
+            names = [c.get("name") for c in (r.json().get("data") or []) if c.get("name")]
+        else:
+            print(f"Чек-лист: charcs {subject_id} -> {r.status_code}")
+    except Exception as e:
+        print(f"Чек-лист: ошибка charcs {subject_id}: {e}")
+    _charcs_cache[subject_id] = names
+    return names
+
+
+def _filled_chars(card):
+    """Заполненные характеристики карточки: {название: значение}."""
+    out = {}
+    for ch in card.get("characteristics") or []:
+        n, v = ch.get("name"), ch.get("value")
+        if n and v:
+            out[n] = ", ".join(map(str, v)) if isinstance(v, list) else str(v)
+    return out
+
+
+def _full_chars(card):
+    """Полный список характеристик категории со статусом заполнено/нет."""
+    filled = _filled_chars(card)
+    names = _subject_charcs(card.get("subjectID"))
+    if not names:
+        # фолбэк: только заполненные
+        return [{"name": n, "filled": True, "value": v} for n, v in filled.items()]
+    full = [{"name": n, "filled": n in filled, "value": filled.get(n, "")} for n in names]
+    for n, v in filled.items():
+        if n not in names:
+            full.append({"name": n, "filled": True, "value": v})
+    return full
+
+
 def _fetch_feedbacks_stats():
     """nmID -> {has_photo, rating, count}. Агрегируем по списку отзывов."""
     headers = {"Authorization": WB_API_TOKEN}
@@ -376,6 +426,8 @@ def _enrich(item, card, ov):
     # Рекомендации продавца — поле has_seller_recommendations из card.json
     if pub.get("recommendations") is not None:
         item["metrics"]["recommendations"] = pub["recommendations"]
+    # Полный список характеристик категории (заполнено/не заполнено), на русском
+    item["chars"] = _full_chars(card)
     # Ручные отметки менеджера имеют приоритет над авто — применяем последними,
     # чтобы зелёные/красные квадратики не сбрасывались при «Обновить».
     for k, v in (ov or {}).items():
@@ -416,12 +468,9 @@ def compute_checklist():
             for key in MANUAL_KEYS:
                 metrics[key] = bool(ov.get(key, MANUAL_DEFAULTS.get(key, False)))
             ordered = {k: metrics.get(k, False) for k, _, _ in METRICS}
-            # Реальные характеристики из кабинета WB (Content API, уже на русском)
-            chars = {}
-            for ch in card.get("characteristics") or []:
-                n, v = ch.get("name"), ch.get("value")
-                if n and v:
-                    chars[n] = ", ".join(map(str, v)) if isinstance(v, list) else str(v)
+            # Заполненные характеристики (быстро); полный список с пустыми — в фазе 2
+            chars = [{"name": n, "filled": True, "value": v}
+                     for n, v in _filled_chars(card).items()]
             item = {
                 "nm_id": nm_id,
                 "name": card.get("title") or card.get("vendorCode") or str(nm_id),

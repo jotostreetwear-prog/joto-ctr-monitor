@@ -4,13 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Чек-лист карточек</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#eef2f6; --card:#fff; --ink:#1f2733; --muted:#8a94a6;
     --green:#22c55e; --red:#ef4444; --orange:#f97316; --line:#eef1f5;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  body{margin:0;font-family:'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;
     background:var(--bg);color:var(--ink);padding:18px 20px;font-size:15px;line-height:1.5}
   h1{font-size:22px;font-weight:700;margin:0 0 6px}
   .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
@@ -192,11 +195,17 @@ function renderRows(){
 }
 
 function charsHtml(it){
-  const rows = Object.entries(it.chars||{}).map(([k,v])=>
-    `<tr><td style="padding:3px 18px 3px 0;color:var(--muted);font-size:14px;white-space:nowrap;vertical-align:top">${k}</td>`+
-    `<td style="padding:3px 0;font-size:15px">${v}</td></tr>`).join('');
-  return `<div style="padding:6px 4px 12px">
-    <table style="border:0;min-width:auto;width:auto;table-layout:auto">${rows||'<tr><td>Характеристики из карточки недоступны</td></tr>'}</table></div>`;
+  const list = it.chars||[];
+  const filled = list.filter(c=>c.filled).length;
+  const rows = list.map(c=>
+    `<tr>
+       <td style="padding:4px 8px 4px 0;vertical-align:top"><span class="sq ${c.filled?'g':'r'}" style="width:14px;height:14px;border-radius:4px"></span></td>
+       <td style="padding:4px 18px 4px 0;color:var(--muted);font-size:14px;white-space:nowrap;vertical-align:top">${c.name}</td>
+       <td style="padding:4px 0;font-size:15px">${c.value || '<span style="color:var(--red)">не заполнено</span>'}</td>
+     </tr>`).join('');
+  return `<div style="padding:6px 4px 14px">
+    <div class="clabel" style="margin-bottom:8px">Характеристики из кабинета · заполнено ${filled} из ${list.length}</div>
+    <table style="border:0;min-width:auto;width:auto;table-layout:auto">${rows||'<tr><td>нет данных</td></tr>'}</table></div>`;
 }
 
 function toggleRow(n){
