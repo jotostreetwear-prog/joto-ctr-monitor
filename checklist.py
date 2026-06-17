@@ -11,11 +11,18 @@ import json
 import time
 import threading
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 import vision
 import wb_public
+
+# Московское время (UTC+3) — Railway работает в UTC
+MSK = timezone(timedelta(hours=3))
+
+
+def _now_msk():
+    return datetime.now(MSK)
 
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 # Отдельный токен для цен (категория «Цены и скидки»). Если не задан —
@@ -354,7 +361,7 @@ def _publish(items):
     with _lock:
         _cache["items"] = snapshot
         _cache["summary"] = _summarize(snapshot)
-        _cache["checked_at"] = datetime.now().strftime("%d.%m.%Y, %H:%M")
+        _cache["checked_at"] = _now_msk().strftime("%d.%m.%Y, %H:%M") + " МСК"
 
 
 def _enrich(item, card, ov):
