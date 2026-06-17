@@ -118,10 +118,10 @@ function hasAutoDefect(it){
   return META.some(m => m.kind !== 'manual' && !it.metrics[m.key]);
 }
 
-// Колонки характеристик — объединение всех названий по артикулам (частые слева)
+// Колонки характеристик — объединение по артикулам ТЕКУЩЕЙ категории (частые слева)
 function computeCharCols(){
   const freq={};
-  (DATA.items||[]).forEach(it=> (it.chars||[]).forEach(c=>{ freq[c.name]=(freq[c.name]||0)+1; }));
+  (DATA.items||[]).filter(inCategory).forEach(it=> (it.chars||[]).forEach(c=>{ freq[c.name]=(freq[c.name]||0)+1; }));
   CHARCOLS = Object.keys(freq).sort((a,b)=> freq[b]-freq[a] || a.localeCompare(b,'ru'));
 }
 
@@ -177,6 +177,7 @@ function populateCats(){
 function onCat(){
   category = document.getElementById('catSelect').value;
   renderStats(summarize(DATA.items.filter(inCategory)));
+  renderHead();  // пересчитать столбцы характеристик под выбранную категорию
   renderRows();
 }
 
