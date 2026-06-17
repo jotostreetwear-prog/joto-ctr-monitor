@@ -84,7 +84,6 @@ METRICS = [
     ("rich_content",   "Рич-контент",       "auto"),
     ("certificates",   "Сертификаты",       "manual"),
     ("barcode",        "Баркод",            "auto"),
-    ("characteristics","Характеристики",    "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "parse"),
     ("recommendations","Рекомендации",      "parse"),
     ("rating",         "Рейтинг",           "auto"),
