@@ -11,11 +11,18 @@ import json
 import time
 import threading
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 import vision
 import wb_public
+
+# Московское время (UTC+3) — Railway работает в UTC
+MSK = timezone(timedelta(hours=3))
+
+
+def _now_msk():
+    return datetime.now(MSK)
 
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 # Отдельный токен для цен (категория «Цены и скидки»). Если не задан —
@@ -354,7 +361,7 @@ def _publish(items):
     with _lock:
         _cache["items"] = snapshot
         _cache["summary"] = _summarize(snapshot)
-        _cache["checked_at"] = datetime.now().strftime("%d.%m.%Y, %H:%M")
+        _cache["checked_at"] = _now_msk().strftime("%d.%m.%Y, %H:%M") + " МСК"
 
 
 def _enrich(item, card, ov):
@@ -409,11 +416,18 @@ def compute_checklist():
             for key in MANUAL_KEYS:
                 metrics[key] = bool(ov.get(key, MANUAL_DEFAULTS.get(key, False)))
             ordered = {k: metrics.get(k, False) for k, _, _ in METRICS}
+            # Реальные характеристики из кабинета WB (Content API, уже на русском)
+            chars = {}
+            for ch in card.get("characteristics") or []:
+                n, v = ch.get("name"), ch.get("value")
+                if n and v:
+                    chars[n] = ", ".join(map(str, v)) if isinstance(v, list) else str(v)
             item = {
                 "nm_id": nm_id,
                 "name": card.get("title") or card.get("vendorCode") or str(nm_id),
                 "vendor_code": card.get("vendorCode") or "",
                 "category": card.get("subjectName") or "Без категории",
+                "chars": chars,
                 "metrics": ordered,
             }
             _recalc_item(item)

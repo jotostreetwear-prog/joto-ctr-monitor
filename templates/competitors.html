@@ -10,26 +10,29 @@
     --orange:#f97316;--line:#eef1f5;--blue:#2563eb}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);
-    color:var(--ink);padding:32px 40px}
-  h1{font-size:28px;margin:0 0 6px}
-  .sub{color:var(--muted);margin:0 0 24px}
+    color:var(--ink);padding:28px 36px;font-size:15px;font-weight:400;line-height:1.5}
+  h1{font-size:22px;font-weight:700;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
   .panel{background:var(--card);border-radius:14px;padding:20px 24px;margin-bottom:20px;
     box-shadow:0 1px 3px rgba(20,30,50,.05)}
   textarea{width:100%;min-height:90px;border:1px solid #d4dae3;border-radius:10px;padding:12px;
-    font-size:14px;font-family:inherit;resize:vertical}
+    font-size:14.5px;font-family:inherit;resize:vertical}
   .row{display:flex;gap:14px;align-items:center;margin-top:12px}
   button{background:var(--ink);color:#fff;border:0;border-radius:10px;padding:11px 20px;cursor:pointer;
-    font-weight:600;font-size:14px}
+    font-weight:600;font-size:15px}
   button:disabled{opacity:.5;cursor:default}
   .hint{color:var(--muted);font-size:13px}
   .wrap{background:var(--card);border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(20,30,50,.05)}
   table{border-collapse:collapse;width:100%;min-width:980px}
-  th,td{padding:13px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:13px}
-  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
+  th{padding:11px 12px;text-align:center;border-bottom:1px solid var(--line);
+    font-size:13px;font-weight:700;color:var(--muted);position:sticky;top:0;background:var(--card)}
+  td{padding:12px;text-align:center;border-bottom:1px solid var(--line);font-size:16px;font-weight:400}
   th.left,td.left{text-align:left}
-  .name{font-weight:700;color:var(--ink)} .name a{color:var(--blue);text-decoration:none}
+  .name{font-size:17px;font-weight:600;color:var(--ink)} .name a{color:var(--blue);text-decoration:none}
   .brand{color:var(--muted);font-size:12px}
-  .big{font-weight:700;font-size:15px}
+  .big{font-weight:700;font-size:16px}
+  .pill{font-size:12px;font-weight:600}
+  .clabel{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
   .min{color:var(--green)} .max{color:var(--red)}
   .dots span{display:inline-block;width:9px;height:9px;border-radius:50%;margin:0 1px;background:#e0e4ea}
   .dots span.on{background:var(--green)}

@@ -49,8 +49,32 @@ def _price(product):
     return None
 
 
+# Перевод английских названий характеристик WB на русский
+CHAR_RU = {
+    "composition": "Состав", "gender": "Пол", "season": "Сезон",
+    "color": "Цвет", "brand": "Бренд", "pattern": "Рисунок",
+    "size on model": "Размер на модели",
+    "model height (cm)": "Рост модели на фото, см",
+    "model measurements (bust-waist-hips)": "Параметры модели (ОГ-ОТ-ОБ)",
+    "fastener type": "Вид застёжки", "fit type": "Тип посадки",
+    "pocket type": "Тип карманов", "size type": "Тип ростовки",
+    "material texture": "Фактура материала",
+    "decorative elements": "Декоративные элементы",
+    "model features": "Особенности модели", "occasion": "Назначение",
+    "garment care": "Уход за вещами", "contents": "Комплектация",
+    "country of origin": "Страна производства", "vat rate": "Ставка НДС",
+    "collection": "Коллекция", "material": "Материал",
+    "number of items in package": "Количество предметов в упаковке",
+    "weight with packaging (g)": "Вес с упаковкой (г)",
+}
+
+
+def _ru_char(name):
+    return CHAR_RU.get((name or "").strip().lower(), name)
+
+
 def _characteristics(cj):
-    """Словарь {характеристика: значение} из публичной карточки."""
+    """Словарь {характеристика: значение} из публичной карточки (названия на русском)."""
     out = {}
     if not isinstance(cj, dict):
         return out
@@ -59,7 +83,7 @@ def _characteristics(cj):
         val = opt.get("value")
         if not name or not val:
             continue
-        out[name] = ", ".join(map(str, val)) if isinstance(val, list) else str(val)
+        out[_ru_char(name)] = ", ".join(map(str, val)) if isinstance(val, list) else str(val)
     return out
 
 
