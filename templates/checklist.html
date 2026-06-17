@@ -81,7 +81,7 @@
     <div style="display:flex;align-items:center;gap:18px">
       <div style="text-align:right">
         <span class="checked"><span class="dot"></span>Проверено: <b id="checkedAt">—</b></span>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">Обновляется автоматически раз в день</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Обновляется автоматически каждые несколько часов</div>
       </div>
       <button class="refresh" id="refreshBtn" onclick="refresh()">Обновить</button>
     </div>
@@ -255,6 +255,9 @@ async function load(){
   META = DATA.metrics || META; render();
   if(DATA.computing) setTimeout(load, 4000);
 }
+
+// Авто-обновление открытой страницы каждые 5 минут (подтягивает свежий пересчёт)
+setInterval(()=>{ if(!DATA || !DATA.computing) load(); }, 5*60*1000);
 
 async function refresh(){
   await fetch('/checklist/refresh', {method:'POST'});
