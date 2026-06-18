@@ -43,14 +43,13 @@
   th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line);font-size:11px}
   th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;background:var(--card);vertical-align:bottom}
   th.left,td.left{text-align:left;padding-left:14px;width:230px}
-  .name{font-weight:600;color:var(--orange);font-size:17px;line-height:1.2} .vc{color:var(--muted);font-size:13px}
+  .name{font-weight:600;color:var(--orange);font-size:15px;line-height:1.2} .vc{color:var(--muted);font-size:12px}
   .name a{color:var(--orange);text-decoration:none} .name a:hover{text-decoration:underline}
   .sq{display:inline-block;width:22px;height:22px;border-radius:6px}
   .sq.g{background:var(--green)} .sq.r{background:var(--red)}
   .sq.click{cursor:pointer;outline:2px solid transparent}
   .sq.click:hover{outline:2px solid #c3cbd6}
-  .sq.na{background:#e6eaf0}
-  th.sep,td.sep{border-right:2px solid #d4dae3}
+  th.sep,td.sep{border-left:2px solid #d4dae3}
   .score{font-weight:700;font-size:13px}
   .pbar{height:4px;border-radius:2px;background:#e6eaf0;margin-top:6px;overflow:hidden}
   .pbar > i{display:block;height:100%;border-radius:2px}
@@ -158,10 +157,10 @@ function renderHead(){
       ? '<div style="font-size:10px;color:var(--orange);font-weight:700;margin-top:4px">✋ вручную</div>' : '';
     return `<th>${m.label.replace(/ /g,'<br>')}${manual}</th>`;
   }).join('');
-  const charCols = CHARCOLS.map(n=>`<th title="${n}" style="color:var(--blue)">${n.replace(/ /g,'<br>')}</th>`).join('');
+  const charCols = CHARCOLS.map((n,i)=>`<th title="${n}" class="${i===0?'sep':''}" style="color:var(--blue)">${n.replace(/ /g,'<br>')}</th>`).join('');
   document.getElementById('head').innerHTML =
-    '<th class="left">Артикул</th>' + metricCols +
-    '<th class="sep">Балл</th>' + charCols;
+    '<th class="left">Артикул</th>' + metricCols + charCols +
+    '<th class="sep">Балл</th>';
 }
 
 function populateCats(){
@@ -204,13 +203,13 @@ function renderRows(){
     const scoreCell = `<td class="sep"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
         <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>`;
     const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
-    const charCells = CHARCOLS.map(name=>{
+    const charCells = CHARCOLS.map((name,i)=>{
       const c = map[name];
       const filled = !!(c && c.filled);
       const t = name + (filled ? ': '+c.value : ': не заполнено');
-      return `<td><span class="sq ${filled?'g':'r'}" title="${t}"></span></td>`;
+      return `<td class="${i===0?'sep':''}"><span class="sq ${filled?'g':'r'}" title="${t}"></span></td>`;
     }).join('');
-    return `<tr>${nameCell}${metricCells}${scoreCell}${charCells}</tr>
+    return `<tr>${nameCell}${metricCells}${charCells}${scoreCell}</tr>
     <tr id="d-${n}" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
   }).join('');
 }
