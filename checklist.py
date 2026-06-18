@@ -271,12 +271,29 @@ def _subject_charcs(subject_id):
     return names
 
 
+# Характеристики, которые НЕ показываем в чек-листе (технические/маркетплейсные).
+# Совпадение по подстроке (без регистра). Настраивается CHECKLIST_CHAR_EXCLUDE.
+CHAR_EXCLUDE = tuple(
+    k.strip().lower()
+    for k in os.environ.get(
+        "CHECKLIST_CHAR_EXCLUDE",
+        "ozon,озон,икпу,код тру,баркод,код упаковки,штук в товаре,любимые герои",
+    ).split(",")
+    if k.strip()
+)
+
+
+def _char_excluded(name):
+    n = (name or "").lower()
+    return any(k in n for k in CHAR_EXCLUDE)
+
+
 def _filled_chars(card):
     """Заполненные характеристики карточки: {название: значение}."""
     out = {}
     for ch in card.get("characteristics") or []:
         n, v = ch.get("name"), ch.get("value")
-        if n and v:
+        if n and v and not _char_excluded(n):
             out[n] = ", ".join(map(str, v)) if isinstance(v, list) else str(v)
     return out
 
@@ -284,7 +301,7 @@ def _filled_chars(card):
 def _full_chars(card):
     """Полный список характеристик категории со статусом заполнено/нет."""
     filled = _filled_chars(card)
-    names = _subject_charcs(card.get("subjectID"))
+    names = [n for n in _subject_charcs(card.get("subjectID")) if not _char_excluded(n)]
     if not names:
         # фолбэк: только заполненные
         return [{"name": n, "filled": True, "value": v} for n, v in filled.items()]
