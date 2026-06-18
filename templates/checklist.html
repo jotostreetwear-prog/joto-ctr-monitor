@@ -19,13 +19,14 @@
   .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
   .exp{cursor:pointer;color:var(--muted);margin-right:4px;font-weight:700;display:inline-block}
   .clabel{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-  .howto{background:var(--card);border-radius:14px;padding:14px 22px;margin-bottom:18px;
-    box-shadow:0 1px 3px rgba(20,30,50,.05)}
-  .howto summary{cursor:pointer;font-weight:700;font-size:15px;list-style:none;display:flex;
-    align-items:center;gap:8px}
+  .howto{margin-bottom:18px}
+  .howto summary{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;
+    font-size:14px;background:var(--card);border:1px solid #d4dae3;border-radius:10px;
+    padding:9px 16px;list-style:none;color:var(--ink);user-select:none}
   .howto summary::-webkit-details-marker{display:none}
-  .howto[open] summary{margin-bottom:10px}
-  .howto ul{margin:0;padding-left:0;list-style:none;font-size:14px;line-height:1.85;color:var(--ink)}
+  .howto[open] summary{margin-bottom:12px}
+  .howto ul{background:var(--card);border-radius:14px;padding:16px 24px;margin:0;list-style:none;
+    box-shadow:0 1px 3px rgba(20,30,50,.05);font-size:14px;line-height:1.85;color:var(--ink)}
   .howto li{padding-left:4px}
   .howto b{color:var(--ink)}
   .tabs{display:flex;gap:8px}
@@ -77,8 +78,8 @@
   <h1>Чек-лист карточек</h1>
   <p class="sub" id="sub">Готовность карточек по артикулам</p>
 
-  <details class="howto" open>
-    <summary>ℹ️ Как пользоваться чек-листом</summary>
+  <details class="howto">
+    <summary>📋 Инструкция</summary>
     <ul>
       <li>🟩 <b>зелёный квадрат</b> — пункт выполнен / характеристика заполнена; 🟥 <b>красный</b> — нет.</li>
       <li>Слева — <b>метрики готовности</b> (фото, видео, баркод, рейтинг, СЕО и т.д.), справа — <b>характеристики из карточки WB</b> (Состав, Вид застёжки, Сезон…). Все характеристики тянутся из кабинета WB.</li>
