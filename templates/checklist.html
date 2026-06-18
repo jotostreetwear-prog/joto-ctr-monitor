@@ -50,6 +50,8 @@
   .sq.click{cursor:pointer;outline:2px solid transparent}
   .sq.click:hover{outline:2px solid #c3cbd6}
   th.sep,td.sep{border-left:2px solid #d4dae3}
+  /* режим «Только красные» — прячем зелёные квадраты, видны только красные */
+  table.only-red .sq.g{visibility:hidden}
   .score{font-weight:700;font-size:13px}
   .pbar{height:4px;border-radius:2px;background:#e6eaf0;margin-top:6px;overflow:hidden}
   .pbar > i{display:block;height:100%;border-radius:2px}
@@ -71,6 +73,7 @@
   <div class="bar">
     <div style="display:flex;align-items:center;gap:20px">
       <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
+      <div class="toggle" id="onlyRed"><div class="sw"></div><span>Только красные</span></div>
       <select id="catSelect" onchange="onCat()" style="padding:9px 12px;border:1px solid #d4dae3;
         border-radius:10px;font-size:14.5px;font-weight:600;color:var(--ink);background:#fff;cursor:pointer">
         <option value="all">Все категории</option>
@@ -87,7 +90,7 @@
   </div>
 
   <div class="wrap">
-    <table>
+    <table id="checktable">
       <thead><tr id="head"></tr></thead>
       <tbody id="rows"><tr><td class="empty" colspan="15">Загрузка…</td></tr></tbody>
     </table>
@@ -280,6 +283,11 @@ async function toggleChar(nm, idx, val){
 
 document.getElementById('onlyIssues').onclick = function(){
   onlyIssues=!onlyIssues; this.classList.toggle('on',onlyIssues); renderRows();
+};
+
+document.getElementById('onlyRed').onclick = function(){
+  const on = this.classList.toggle('on');
+  document.getElementById('checktable').classList.toggle('only-red', on);
 };
 
 if(embedded && window.BX24){
