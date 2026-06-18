@@ -81,7 +81,7 @@
     <div style="display:flex;align-items:center;gap:18px">
       <div style="text-align:right">
         <span class="checked"><span class="dot"></span>Проверено: <b id="checkedAt">—</b></span>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">Обновляется автоматически каждые несколько часов</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Обновляется автоматически каждый час</div>
       </div>
       <button class="refresh" id="refreshBtn" onclick="refresh()">Обновить</button>
     </div>
@@ -118,10 +118,10 @@ function hasAutoDefect(it){
   return META.some(m => m.kind !== 'manual' && !it.metrics[m.key]);
 }
 
-// Колонки характеристик — объединение всех названий по артикулам (частые слева)
+// Колонки характеристик — объединение по артикулам ТЕКУЩЕЙ категории (частые слева)
 function computeCharCols(){
   const freq={};
-  (DATA.items||[]).forEach(it=> (it.chars||[]).forEach(c=>{ freq[c.name]=(freq[c.name]||0)+1; }));
+  (DATA.items||[]).filter(inCategory).forEach(it=> (it.chars||[]).forEach(c=>{ freq[c.name]=(freq[c.name]||0)+1; }));
   CHARCOLS = Object.keys(freq).sort((a,b)=> freq[b]-freq[a] || a.localeCompare(b,'ru'));
 }
 
@@ -177,6 +177,7 @@ function populateCats(){
 function onCat(){
   category = document.getElementById('catSelect').value;
   renderStats(summarize(DATA.items.filter(inCategory)));
+  renderHead();  // пересчитать столбцы характеристик под выбранную категорию
   renderRows();
 }
 
@@ -205,9 +206,9 @@ function renderRows(){
     const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
     const charCells = CHARCOLS.map(name=>{
       const c = map[name];
-      const cls = !c ? 'sq na' : 'sq '+(c.filled?'g':'r');
-      const t = c ? (name+(c.value?': '+c.value:': не заполнено')) : name+' — не относится к категории';
-      return `<td><span class="${cls}" title="${t}"></span></td>`;
+      const filled = !!(c && c.filled);
+      const t = name + (filled ? ': '+c.value : ': не заполнено');
+      return `<td><span class="sq ${filled?'g':'r'}" title="${t}"></span></td>`;
     }).join('');
     return `<tr>${nameCell}${metricCells}${scoreCell}${charCells}</tr>
     <tr id="d-${n}" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
