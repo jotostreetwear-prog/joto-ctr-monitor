@@ -19,6 +19,15 @@
   .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
   .exp{cursor:pointer;color:var(--muted);margin-right:4px;font-weight:700;display:inline-block}
   .clabel{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .howto{background:var(--card);border-radius:14px;padding:14px 22px;margin-bottom:18px;
+    box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  .howto summary{cursor:pointer;font-weight:700;font-size:15px;list-style:none;display:flex;
+    align-items:center;gap:8px}
+  .howto summary::-webkit-details-marker{display:none}
+  .howto[open] summary{margin-bottom:10px}
+  .howto ul{margin:0;padding-left:0;list-style:none;font-size:14px;line-height:1.85;color:var(--ink)}
+  .howto li{padding-left:4px}
+  .howto b{color:var(--ink)}
   .tabs{display:flex;gap:8px}
   .tab{font-size:15px;font-weight:600;padding:7px 14px;border-radius:9px;cursor:pointer;color:var(--muted);user-select:none}
   .tab.active{background:var(--ink);color:#fff}
@@ -67,6 +76,21 @@
 <body>
   <h1>Чек-лист карточек</h1>
   <p class="sub" id="sub">Готовность карточек по артикулам</p>
+
+  <details class="howto" open>
+    <summary>ℹ️ Как пользоваться чек-листом</summary>
+    <ul>
+      <li>🟩 <b>зелёный квадрат</b> — пункт выполнен / характеристика заполнена; 🟥 <b>красный</b> — нет.</li>
+      <li>Слева — <b>метрики готовности</b> (фото, видео, баркод, рейтинг, СЕО и т.д.), справа — <b>характеристики из карточки WB</b> (Состав, Вид застёжки, Сезон…). Все характеристики тянутся из кабинета WB.</li>
+      <li>✋ Колонки с пометкой <b>«вручную»</b> и <b>все характеристики</b> можно переключать <b>кликом по квадрату</b> (красный ↔ зелёный). Отметка <b>сохраняется навсегда</b> — переживает обновление и не сбрасывается.</li>
+      <li><b>Балл</b> (справа) — итоговый % готовности по метрикам.</li>
+      <li>Тумблер <b>«Только с недочётами»</b> — показать карточки, где есть что доделать.</li>
+      <li>Тумблер <b>«Только красные»</b> — спрятать зелёные квадраты, видно <b>только незаполненное</b>.</li>
+      <li>Список <b>категорий</b> — показать одну категорию (Шорты, Худи…); характеристики подстроятся под неё.</li>
+      <li>Клик по <b>▸</b> у артикула — раскрыть все характеристики со значениями; клик по <b>названию</b> — открыть карточку на Wildberries.</li>
+      <li>Данные обновляются <b>автоматически каждый час</b>; кнопка <b>«Обновить»</b> — пересчитать прямо сейчас.</li>
+    </ul>
+  </details>
 
   <div class="stats" id="stats"></div>
 
