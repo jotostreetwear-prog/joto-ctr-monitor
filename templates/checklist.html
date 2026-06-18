@@ -43,7 +43,7 @@
   th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line);font-size:11px}
   th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;background:var(--card);vertical-align:bottom}
   th.left,td.left{text-align:left;padding-left:14px;width:230px}
-  .name{font-weight:600;color:var(--orange);font-size:15px;line-height:1.2} .vc{color:var(--muted);font-size:12px}
+  .name{font-weight:600;color:var(--orange);font-size:13px;line-height:1.25} .vc{color:var(--muted);font-size:11px}
   .name a{color:var(--orange);text-decoration:none} .name a:hover{text-decoration:underline}
   .sq{display:inline-block;width:22px;height:22px;border-radius:6px}
   .sq.g{background:var(--green)} .sq.r{background:var(--red)}
@@ -159,8 +159,8 @@ function renderHead(){
   }).join('');
   const charCols = CHARCOLS.map((n,i)=>`<th title="${n}" class="${i===0?'sep':''}" style="color:var(--blue)">${n.replace(/ /g,'<br>')}</th>`).join('');
   document.getElementById('head').innerHTML =
-    '<th class="left">Артикул</th>' + metricCols + charCols +
-    '<th class="sep">Балл</th>';
+    '<th class="left">Артикул</th>' + metricCols +
+    '<th>Балл</th>' + charCols;
 }
 
 function populateCats(){
@@ -200,16 +200,16 @@ function renderRows(){
       const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
       return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
     }).join('');
-    const scoreCell = `<td class="sep"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
+    const scoreCell = `<td><div class="score" style="color:${color(it.score)}">${it.score}%</div>
         <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>`;
     const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
     const charCells = CHARCOLS.map((name,i)=>{
       const c = map[name];
       const filled = !!(c && c.filled);
-      const t = name + (filled ? ': '+c.value : ': не заполнено');
-      return `<td class="${i===0?'sep':''}"><span class="sq ${filled?'g':'r'}" title="${t}"></span></td>`;
+      const t = name + (filled ? ': '+(c.value||'') : ': не заполнено') + ' (клик — переключить)';
+      return `<td class="${i===0?'sep':''}"><span class="sq click ${filled?'g':'r'}" onclick="toggleChar('${it.nm_id}',${i},${!filled})" title="${t}"></span></td>`;
     }).join('');
-    return `<tr>${nameCell}${metricCells}${charCells}${scoreCell}</tr>
+    return `<tr>${nameCell}${metricCells}${scoreCell}${charCells}</tr>
     <tr id="d-${n}" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
   }).join('');
 }
@@ -267,6 +267,14 @@ async function refresh(){
 async function toggle(nm, key, val){
   await fetch('/checklist/override', {method:'POST',headers:{'Content-Type':'application/json'},
     body: JSON.stringify({nm_id:nm, metric:key, value:val})});
+  load();
+}
+
+// Ручное переключение квадратика характеристики (красный↔зелёный), с сохранением
+async function toggleChar(nm, idx, val){
+  const name = CHARCOLS[idx];
+  await fetch('/checklist/override', {method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({nm_id:nm, metric:'char:'+name, value:val})});
   load();
 }
 

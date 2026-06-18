@@ -151,19 +151,27 @@ def overrides_info():
 
 
 def set_override(nm_id, metric_key, value):
-    """Выставить ручную отметку по визуальной метрике."""
-    if metric_key not in MANUAL_KEYS:
+    """Ручная отметка: метрика (MANUAL_KEYS) или характеристика (ключ 'char:Название')."""
+    is_char = str(metric_key).startswith("char:")
+    if not is_char and metric_key not in MANUAL_KEYS:
         return False
     data = _load_overrides()
     nm_key = str(nm_id)
     data.setdefault(nm_key, {})[metric_key] = bool(value)
     _save_overrides(data)
-    # обновляем кэш, чтобы дашборд сразу показал новый балл
+    # обновляем кэш, чтобы дашборд сразу показал изменение
     with _lock:
         for item in _cache["items"]:
             if str(item["nm_id"]) == nm_key:
-                item["metrics"][metric_key] = bool(value)
-                _recalc_item(item)
+                if is_char:
+                    name = metric_key[5:]
+                    for c in item.get("chars", []):
+                        if c["name"] == name:
+                            c["filled"] = bool(value)
+                            break
+                else:
+                    item["metrics"][metric_key] = bool(value)
+                    _recalc_item(item)
                 break
         _cache["summary"] = _summarize(_cache["items"])
     return True
@@ -263,12 +271,29 @@ def _subject_charcs(subject_id):
     return names
 
 
+# Характеристики, которые НЕ показываем в чек-листе (технические/маркетплейсные).
+# Совпадение по подстроке (без регистра). Настраивается CHECKLIST_CHAR_EXCLUDE.
+CHAR_EXCLUDE = tuple(
+    k.strip().lower()
+    for k in os.environ.get(
+        "CHECKLIST_CHAR_EXCLUDE",
+        "ozon,озон,икпу,код тру,баркод,код упаковки,штук в товаре,любимые герои",
+    ).split(",")
+    if k.strip()
+)
+
+
+def _char_excluded(name):
+    n = (name or "").lower()
+    return any(k in n for k in CHAR_EXCLUDE)
+
+
 def _filled_chars(card):
     """Заполненные характеристики карточки: {название: значение}."""
     out = {}
     for ch in card.get("characteristics") or []:
         n, v = ch.get("name"), ch.get("value")
-        if n and v:
+        if n and v and not _char_excluded(n):
             out[n] = ", ".join(map(str, v)) if isinstance(v, list) else str(v)
     return out
 
@@ -276,7 +301,7 @@ def _filled_chars(card):
 def _full_chars(card):
     """Полный список характеристик категории со статусом заполнено/нет."""
     filled = _filled_chars(card)
-    names = _subject_charcs(card.get("subjectID"))
+    names = [n for n in _subject_charcs(card.get("subjectID")) if not _char_excluded(n)]
     if not names:
         # фолбэк: только заполненные
         return [{"name": n, "filled": True, "value": v} for n, v in filled.items()]
@@ -428,11 +453,17 @@ def _enrich(item, card, ov):
         item["metrics"]["recommendations"] = pub["recommendations"]
     # Полный список характеристик категории (заполнено/не заполнено), на русском
     item["chars"] = _full_chars(card)
-    # Ручные отметки менеджера имеют приоритет над авто — применяем последними,
-    # чтобы зелёные/красные квадратики не сбрасывались при «Обновить».
+    # Ручные отметки менеджера имеют приоритет — применяем последними, чтобы
+    # квадратики (метрики и характеристики) не сбрасывались при «Обновить».
     for k, v in (ov or {}).items():
         if k in item["metrics"]:
             item["metrics"][k] = bool(v)
+        elif k.startswith("char:"):
+            name = k[5:]
+            for c in item["chars"]:
+                if c["name"] == name:
+                    c["filled"] = bool(v)
+                    break
     _recalc_item(item)
 
 
