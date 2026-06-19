@@ -65,6 +65,17 @@ NOT_APPROVED_VALUES = tuple(
     if v.strip()
 )
 
+# Статусы этапа «отправлено/на согласовании» — по ним шлём отдельное
+# уведомление «отпуск подан на согласование» (а не «согласован»).
+PENDING_VALUES = tuple(
+    v.strip().lower()
+    for v in os.environ.get(
+        "VACATIONS_PENDING_VALUES",
+        "на согласован,на утвержд,ожид,рассмотр,в процесс,отправлен",
+    ).split(",")
+    if v.strip()
+)
+
 # Явные имена колонок (если автоопределение ошибётся — задать точные заголовки).
 COL_NAME = os.environ.get("VACATIONS_COL_NAME", "").strip()
 COL_BITRIX = os.environ.get("VACATIONS_COL_BITRIX", "").strip()
@@ -72,6 +83,7 @@ COL_START = os.environ.get("VACATIONS_COL_START", "").strip()
 COL_END = os.environ.get("VACATIONS_COL_END", "").strip()
 COL_PERIOD = os.environ.get("VACATIONS_COL_PERIOD", "").strip()
 COL_STATUS = os.environ.get("VACATIONS_COL_STATUS", "").strip()
+COL_COMMENT = os.environ.get("VACATIONS_COL_COMMENT", "").strip()
 
 # Ключевые слова для автоопределения колонок по заголовку (в порядке приоритета).
 # Без одиночных «с»/«по» — они ловят лишние колонки («Даты отпуска» и т.п.).
@@ -83,6 +95,7 @@ _KEYWORDS = {
     # одна колонка с периодом отпуска целиком (например «Даты отпуска»: «27.07-02.08»)
     "period": ["даты отпуска", "период отпуска", "срок отпуска", "даты", "период", "срок"],
     "status": ["статус согласования", "статус", "согласование", "состояние", "status"],
+    "comment": ["комментарий", "комментарии", "коммент", "примечание", "comment", "note"],
 }
 
 # Где хранить ключи уже отправленных уведомлений (переживает редеплои на Railway).
@@ -153,6 +166,20 @@ def _is_approved(status_value):
     if any(v in s for v in NOT_APPROVED_VALUES):
         return False
     return any(v in s for v in APPROVED_VALUES)
+
+
+def _is_pending(status_value):
+    s = _norm(status_value)
+    return bool(s) and any(v in s for v in PENDING_VALUES)
+
+
+def notify_stage(status_value):
+    """Этап для уведомления: 'approved', 'pending' или None (не уведомляем)."""
+    if _is_approved(status_value):
+        return "approved"
+    if _is_pending(status_value):
+        return "pending"
+    return None
 
 
 def extract_bitrix_id(value):
@@ -236,6 +263,7 @@ def fetch_rows():
         "end": _match_column(headers, _KEYWORDS["end"], COL_END),
         "period": _match_column(headers, _KEYWORDS["period"], COL_PERIOD),
         "status": _match_column(headers, _KEYWORDS["status"], COL_STATUS),
+        "comment": _match_column(headers, _KEYWORDS["comment"], COL_COMMENT),
     }
     out["columns"] = {
         k: (headers[i] if i is not None and i < len(headers) else None)
@@ -259,6 +287,7 @@ def fetch_rows():
         end = cell(row, "end")
         period = cell(row, "period")
         status = cell(row, "status")
+        comment = cell(row, "comment")
         if not name and not bitrix_raw and not period and not start:
             continue
         # период отпуска для показа и для ключа: либо отдельная колонка,
@@ -268,7 +297,8 @@ def fetch_rows():
         # если есть только период «27.07-02.08» — попробуем разложить на даты
         if period and not start and not end:
             start, end = _split_period(period)
-        approved = _is_approved(status)
+        stage = notify_stage(status)
+        dates = period or f"{start}-{end}"
         rows.append({
             "name": name,
             "bitrix_id": bitrix_id,
@@ -277,9 +307,11 @@ def fetch_rows():
             "end": end,
             "period": period,
             "status": status,
-            "approved": approved,
+            "comment": comment,
+            "approved": stage == "approved",
+            "stage": stage,
             "has_dates": _has_real_dates(period, start, end),
-            "key": row_key(bitrix_id, period or f"{start}-{end}"),
+            "key": row_key(bitrix_id, dates, stage or "approved"),
         })
 
     out["rows"] = rows
@@ -287,8 +319,11 @@ def fetch_rows():
     return out
 
 
-def row_key(bitrix_id, dates):
-    return f"{(bitrix_id or '').strip()}|{(dates or '').strip()}"
+def row_key(bitrix_id, dates, stage="approved"):
+    """Ключ для защиты от дублей. Этап 'approved' сохраняет старый формат
+    (без префикса) — чтобы ранее уведомлённые согласования не ушли повторно."""
+    base = f"{(bitrix_id or '').strip()}|{(dates or '').strip()}"
+    return base if stage == "approved" else f"{stage}:{base}"
 
 
 # ===================== ХРАНИЛИЩЕ ОТПРАВЛЕННЫХ =====================
@@ -317,14 +352,28 @@ def save_notified(keys):
 
 
 def employee_message(row):
-    """Текст личного уведомления сотруднику о согласованном отпуске."""
+    """Текст личного уведомления сотруднику. Зависит от этапа (stage)."""
     when = ""
     if row.get("start") and row.get("end"):
         when = f" с *{row['start']}* по *{row['end']}*"
     elif row.get("period") and row.get("has_dates"):
         when = f" *{row['period']}*"
+
+    if row.get("stage") == "pending":
+        head = (
+            f"📝 Ваш отпуск{when} отправлен *на согласование*.\n"
+            "Мы сообщим, как только его согласуют."
+        )
+    else:  # approved
+        head = (
+            f"🌴 Ваш отпуск{when} *согласован*!\n"
+            "Хорошего отдыха 🙌"
+        )
+
+    comment = (row.get("comment") or "").strip()
+    comment_block = f"\n\n💬 Комментарий: {comment}" if comment else ""
+
     return (
-        f"🌴 Ваш отпуск{when} *согласован*!\n"
-        "Хорошего отдыха 🙌\n\n"
+        f"{head}{comment_block}\n\n"
         "_Сообщение от JOTO — сформировано автоматически из графика отпусков._"
     )

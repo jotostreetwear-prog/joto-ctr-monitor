@@ -326,13 +326,15 @@ def notify_checklist(force_compute=False):
 VACATIONS_SUMMARY_TO = os.environ.get("VACATIONS_SUMMARY_TO", TATIANA_USER_ID).strip()
 
 
-def check_vacations(send_seed=False):
+def check_vacations(send_seed=False, force=None):
     """Читает график отпусков и шлёт сотрудникам уведомления о согласованных.
 
-    send_seed=True — принудительно уведомить все согласованные строки
-    (даже на первом запуске). По умолчанию первый запуск только запоминает
-    текущие согласованные отпуска, никого не беспокоя.
+    send_seed=True — принудительно уведомить все строки (даже на первом
+    запуске). force — переотправить, игнорируя защиту от дублей:
+      • force="all" — всем подходящим строкам;
+      • force="<ID>" — только сотруднику с этим ID Битрикс.
     """
+    force = (str(force).strip() if force else "")
     print(f"Отпуска: проверка {datetime.now()}")
 
     if not B24_WEBHOOK:
@@ -345,8 +347,11 @@ def check_vacations(send_seed=False):
         return
 
     rows = data["rows"]
-    approved = [r for r in rows if r["approved"]]
-    print(f"Отпуска: всего строк {len(rows)}, согласованных {len(approved)}")
+    # уведомляем на этапах «на согласовании» (pending) и «согласовано» (approved)
+    to_notify = [r for r in rows if r.get("stage")]
+    print(f"Отпуска: всего строк {len(rows)}, к уведомлению {len(to_notify)} "
+          f"(согласовано {sum(1 for r in to_notify if r['stage']=='approved')}, "
+          f"на согласовании {sum(1 for r in to_notify if r['stage']=='pending')})")
 
     notified = vacations.load_notified()
     first_run = notified is None
@@ -354,18 +359,19 @@ def check_vacations(send_seed=False):
         notified = set()
 
     # Первый запуск без принудительной отправки — просто запоминаем текущие
-    # согласованные, чтобы не разослать всем разом исторические отпуска.
+    # строки, чтобы не разослать всем разом исторические отпуска.
     if first_run and not send_seed:
-        for r in approved:
+        for r in to_notify:
             notified.add(r["key"])
         vacations.save_notified(notified)
-        print(f"Отпуска: первый запуск — запомнил {len(approved)} согласованных, "
-              "уведомления не слал. Новые согласования будут уведомляться.")
+        print(f"Отпуска: первый запуск — запомнил {len(to_notify)} строк, "
+              "уведомления не слал. Новые статусы будут уведомляться.")
         return
 
     sent, skipped_no_id, failed = [], [], []
-    for r in approved:
-        if r["key"] in notified:
+    for r in to_notify:
+        forced = force and (force == "all" or force == r["bitrix_id"])
+        if r["key"] in notified and not forced:
             continue
         if not r.get("has_dates"):
             continue  # «без отпуска» / нет дат — уведомлять не о чем
@@ -392,7 +398,8 @@ def check_vacations(send_seed=False):
         lines = ["🌴 *Уведомления об отпусках разосланы (JOTO):*", ""]
         for r in sent:
             period = r.get("period") or f"{r['start']}–{r['end']}".strip("–")
-            lines.append(f"✅ {r['name'] or r['bitrix_id']} ({period})")
+            mark = "✅ согласовано" if r.get("stage") == "approved" else "📝 на согласовании"
+            lines.append(f"{mark}: {r['name'] or r['bitrix_id']} ({period})")
         if skipped_no_id:
             lines.append("")
             lines.append("⚠️ Без ID Битрикс (не отправлено): "
@@ -423,11 +430,15 @@ def vacations_data():
 
 @app.route("/vacations/check-now", methods=["GET"])
 def vacations_check_now():
-    # /vacations/check-now?seed=1 — принудительно уведомить все согласованные
+    # /vacations/check-now?seed=1 — запомнить текущие без отправки (первый запуск)
+    # /vacations/check-now?force=226 — переотправить сотруднику с ID 226
+    # /vacations/check-now?force=all — переотправить всем (игнорируя дубли)
     seed = request.args.get("seed") in ("1", "true", "yes")
-    threading.Thread(target=check_vacations, kwargs={"send_seed": seed}, daemon=True).start()
+    force = request.args.get("force", "")
+    threading.Thread(target=check_vacations,
+                     kwargs={"send_seed": seed, "force": force}, daemon=True).start()
     return jsonify({"ok": True, "message": "Проверка графика отпусков запущена",
-                    "seed": seed})
+                    "seed": seed, "force": force})
 
 
 @app.route("/vacations/debug", methods=["GET"])
