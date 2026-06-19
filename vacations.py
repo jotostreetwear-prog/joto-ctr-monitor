@@ -15,6 +15,7 @@
 """
 
 import os
+import re
 import csv
 import io
 import json
@@ -69,15 +70,19 @@ COL_NAME = os.environ.get("VACATIONS_COL_NAME", "").strip()
 COL_BITRIX = os.environ.get("VACATIONS_COL_BITRIX", "").strip()
 COL_START = os.environ.get("VACATIONS_COL_START", "").strip()
 COL_END = os.environ.get("VACATIONS_COL_END", "").strip()
+COL_PERIOD = os.environ.get("VACATIONS_COL_PERIOD", "").strip()
 COL_STATUS = os.environ.get("VACATIONS_COL_STATUS", "").strip()
 
 # Ключевые слова для автоопределения колонок по заголовку (в порядке приоритета).
+# Без одиночных «с»/«по» — они ловят лишние колонки («Даты отпуска» и т.п.).
 _KEYWORDS = {
     "name":   ["фио", "ф.и.о", "сотрудник", "работник", "имя", "name"],
-    "bitrix": ["битрикс", "bitrix", "b24", "id битрикс", "ид битрикс", "id"],
-    "start":  ["дата начала", "начало отпуска", "начал", "отпуск с", "дата с", "start", "с"],
-    "end":    ["дата окончания", "окончание", "оконч", "конец", "отпуск по", "дата по", "end", "по"],
-    "status": ["статус", "согласован", "состояние", "утвержд", "status"],
+    "bitrix": ["id битрикс", "ид битрикс", "битрикс", "bitrix", "b24", "профиль", "id"],
+    "start":  ["дата начала", "начало отпуска", "дата с", "отпуск с", "начал", "start"],
+    "end":    ["дата окончания", "дата по", "окончание", "отпуск по", "оконч", "конец", "end"],
+    # одна колонка с периодом отпуска целиком (например «Даты отпуска»: «27.07-02.08»)
+    "period": ["даты отпуска", "период отпуска", "срок отпуска", "даты", "период", "срок"],
+    "status": ["статус согласования", "статус", "согласование", "состояние", "status"],
 }
 
 # Где хранить ключи уже отправленных уведомлений (переживает редеплои на Railway).
@@ -150,6 +155,43 @@ def _is_approved(status_value):
     return any(v in s for v in APPROVED_VALUES)
 
 
+def extract_bitrix_id(value):
+    """Достаёт числовой ID пользователя Битрикс24 из значения ячейки.
+
+    В таблице ID хранится ссылкой вида
+    https://joto.bitrix24.ru/company/personal/user/123/ — берём число
+    после /user/. Поддерживаем и просто число в ячейке.
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+    m = re.search(r"/user/(\d+)", v)
+    if m:
+        return m.group(1)
+    if v.isdigit():
+        return v
+    # запасной вариант — первое самостоятельное число
+    m = re.search(r"\b(\d{1,9})\b", v)
+    return m.group(1) if m else ""
+
+
+def _split_period(period):
+    """Разбивает «27.07-02.08» на (начало, конец). Если не вышло — («», «»)."""
+    p = (period or "").strip()
+    if not p:
+        return "", ""
+    parts = re.split(r"\s*[-–—]\s*", p)
+    if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+        return parts[0].strip(), parts[1].strip()
+    return "", ""
+
+
+def _has_real_dates(period, start, end):
+    """True, если в датах есть цифры (отсекает «без отпуска», пустые ячейки)."""
+    text = f"{period} {start} {end}"
+    return bool(re.search(r"\d", text))
+
+
 def fetch_rows():
     """Скачивает и разбирает таблицу. Возвращает dict:
 
@@ -192,6 +234,7 @@ def fetch_rows():
         "bitrix": _match_column(headers, _KEYWORDS["bitrix"], COL_BITRIX),
         "start": _match_column(headers, _KEYWORDS["start"], COL_START),
         "end": _match_column(headers, _KEYWORDS["end"], COL_END),
+        "period": _match_column(headers, _KEYWORDS["period"], COL_PERIOD),
         "status": _match_column(headers, _KEYWORDS["status"], COL_STATUS),
     }
     out["columns"] = {
@@ -210,21 +253,33 @@ def fetch_rows():
         if not any((c or "").strip() for c in row):
             continue  # пустая строка
         name = cell(row, "name")
-        bitrix_id = cell(row, "bitrix")
+        bitrix_raw = cell(row, "bitrix")
+        bitrix_id = extract_bitrix_id(bitrix_raw)
         start = cell(row, "start")
         end = cell(row, "end")
+        period = cell(row, "period")
         status = cell(row, "status")
-        if not name and not bitrix_id and not start:
+        if not name and not bitrix_raw and not period and not start:
             continue
+        # период отпуска для показа и для ключа: либо отдельная колонка,
+        # либо собранный из дата-начала/дата-конца
+        if not period and (start or end):
+            period = " – ".join(x for x in [start, end] if x)
+        # если есть только период «27.07-02.08» — попробуем разложить на даты
+        if period and not start and not end:
+            start, end = _split_period(period)
         approved = _is_approved(status)
         rows.append({
             "name": name,
             "bitrix_id": bitrix_id,
+            "bitrix_raw": bitrix_raw,
             "start": start,
             "end": end,
+            "period": period,
             "status": status,
             "approved": approved,
-            "key": row_key(bitrix_id, start, end),
+            "has_dates": _has_real_dates(period, start, end),
+            "key": row_key(bitrix_id, period or f"{start}-{end}"),
         })
 
     out["rows"] = rows
@@ -232,8 +287,8 @@ def fetch_rows():
     return out
 
 
-def row_key(bitrix_id, start, end):
-    return f"{(bitrix_id or '').strip()}|{(start or '').strip()}|{(end or '').strip()}"
+def row_key(bitrix_id, dates):
+    return f"{(bitrix_id or '').strip()}|{(dates or '').strip()}"
 
 
 # ===================== ХРАНИЛИЩЕ ОТПРАВЛЕННЫХ =====================
@@ -263,13 +318,13 @@ def save_notified(keys):
 
 def employee_message(row):
     """Текст личного уведомления сотруднику о согласованном отпуске."""
-    period = ""
-    if row["start"] and row["end"]:
-        period = f" с *{row['start']}* по *{row['end']}*"
-    elif row["start"]:
-        period = f" с *{row['start']}*"
+    when = ""
+    if row.get("start") and row.get("end"):
+        when = f" с *{row['start']}* по *{row['end']}*"
+    elif row.get("period") and row.get("has_dates"):
+        when = f" *{row['period']}*"
     return (
-        f"🌴 Ваш отпуск{period} *согласован*!\n"
+        f"🌴 Ваш отпуск{when} *согласован*!\n"
         "Хорошего отдыха 🙌\n\n"
-        "_Сообщение сформировано автоматически из графика отпусков._"
+        "_Сообщение от JOTO — сформировано автоматически из графика отпусков._"
     )

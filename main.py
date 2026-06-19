@@ -367,6 +367,8 @@ def check_vacations(send_seed=False):
     for r in approved:
         if r["key"] in notified:
             continue
+        if not r.get("has_dates"):
+            continue  # «без отпуска» / нет дат — уведомлять не о чем
         if not r["bitrix_id"]:
             skipped_no_id.append(r)
             continue
@@ -387,9 +389,9 @@ def check_vacations(send_seed=False):
 
     # Короткая сводка руководителю/HR (если кому-то реально ушли уведомления).
     if sent and VACATIONS_SUMMARY_TO:
-        lines = ["🌴 *Уведомления об отпусках разосланы:*", ""]
+        lines = ["🌴 *Уведомления об отпусках разосланы (JOTO):*", ""]
         for r in sent:
-            period = f"{r['start']}–{r['end']}".strip("–")
+            period = r.get("period") or f"{r['start']}–{r['end']}".strip("–")
             lines.append(f"✅ {r['name'] or r['bitrix_id']} ({period})")
         if skipped_no_id:
             lines.append("")
