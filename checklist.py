@@ -77,11 +77,11 @@ OVERRIDES_PATH = (
 #   manual — выставляется вручную в дашборде
 # Порядок совпадает с макетом дашборда.
 METRICS = [
-    ("photo10",        "Фото (10 шт)",      "auto"),
+    ("photo10",        "Фото (6 шт)",       "manual"),
     ("pinned_reviews", "Закреп. отзывы",    "manual"),
-    ("photo_reviews",  "Фотоотзывы",        "auto"),
-    ("video",          "Видео",             "auto"),
-    ("rich_content",   "Рич-контент",       "auto"),
+    ("photo_reviews",  "Фотоотзывы",        "manual"),
+    ("video",          "Видео",             "manual"),
+    ("rich_content",   "Рич-контент",       "manual"),
     ("certificates",   "Сертификаты",       "manual"),
     ("barcode",        "Баркод",            "auto"),
     ("grid_4th",       "Сетка на 4-м фото", "parse"),
@@ -98,6 +98,15 @@ MANUAL_KEYS = [k for k, _, kind in METRICS if kind != "auto"]
 # исключения отмечаются вручную. Остальные — красные, пока не отметят.
 MANUAL_DEFAULTS = {"certificates": True}
 TOTAL_METRICS = len(METRICS)
+
+# Белый список характеристик-столбцов (после метрик). Пусто = показывать все.
+# Имена должны совпадать с названиями характеристик WB. «Описание» — по описанию.
+CHAR_INCLUDE = [
+    s.strip() for s in os.environ.get(
+        "CHECKLIST_CHAR_INCLUDE",
+        "Описание,Пол,Состав,Сезон,Страна производства,Ставка НДС",
+    ).split(",") if s.strip()
+]
 
 # Кэш последнего результата + блокировка
 _cache = {"checked_at": None, "items": [], "summary": {}}
@@ -299,11 +308,24 @@ def _filled_chars(card):
 
 
 def _full_chars(card):
-    """Полный список характеристик категории со статусом заполнено/нет."""
+    """Столбцы характеристик. Если задан белый список (CHAR_INCLUDE) — только они,
+    в заданном порядке; «Описание» берётся из описания карточки."""
     filled = _filled_chars(card)
+    if CHAR_INCLUDE:
+        flow = {k.lower(): v for k, v in filled.items()}
+        desc = (card.get("description") or "").strip()
+        out = []
+        for name in CHAR_INCLUDE:
+            if name.lower() == "описание":
+                out.append({"name": "Описание", "filled": bool(desc),
+                            "value": (desc[:100] + "…") if len(desc) > 100 else desc})
+            else:
+                v = flow.get(name.lower(), "")
+                out.append({"name": name, "filled": bool(v), "value": v})
+        return out
+    # без белого списка — полный список характеристик категории
     names = [n for n in _subject_charcs(card.get("subjectID")) if not _char_excluded(n)]
     if not names:
-        # фолбэк: только заполненные
         return [{"name": n, "filled": True, "value": v} for n, v in filled.items()]
     full = [{"name": n, "filled": n in filled, "value": filled.get(n, "")} for n in names]
     for n, v in filled.items():
@@ -399,7 +421,7 @@ def _auto_metrics(card, fb):
     chars_filled = sum(1 for c in chars if c.get("value"))
 
     return {
-        "photo10": len(photos) >= 10,
+        "photo10": len(photos) >= 6,
         "photo_reviews": bool(fb.get("has_photo")),
         "video": bool(video),
         "rich_content": len(desc) >= 1000,
@@ -499,9 +521,8 @@ def compute_checklist():
             for key in MANUAL_KEYS:
                 metrics[key] = bool(ov.get(key, MANUAL_DEFAULTS.get(key, False)))
             ordered = {k: metrics.get(k, False) for k, _, _ in METRICS}
-            # Заполненные характеристики (быстро); полный список с пустыми — в фазе 2
-            chars = [{"name": n, "filled": True, "value": v}
-                     for n, v in _filled_chars(card).items()]
+            # Столбцы характеристик (белый список — быстро, без сети)
+            chars = _full_chars(card)
             item = {
                 "nm_id": nm_id,
                 "name": card.get("title") or card.get("vendorCode") or str(nm_id),
