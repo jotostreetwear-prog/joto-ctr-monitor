@@ -345,8 +345,11 @@ def check_vacations(send_seed=False):
         return
 
     rows = data["rows"]
-    approved = [r for r in rows if r["approved"]]
-    print(f"Отпуска: всего строк {len(rows)}, согласованных {len(approved)}")
+    # уведомляем на этапах «на согласовании» (pending) и «согласовано» (approved)
+    to_notify = [r for r in rows if r.get("stage")]
+    print(f"Отпуска: всего строк {len(rows)}, к уведомлению {len(to_notify)} "
+          f"(согласовано {sum(1 for r in to_notify if r['stage']=='approved')}, "
+          f"на согласовании {sum(1 for r in to_notify if r['stage']=='pending')})")
 
     notified = vacations.load_notified()
     first_run = notified is None
@@ -354,17 +357,17 @@ def check_vacations(send_seed=False):
         notified = set()
 
     # Первый запуск без принудительной отправки — просто запоминаем текущие
-    # согласованные, чтобы не разослать всем разом исторические отпуска.
+    # строки, чтобы не разослать всем разом исторические отпуска.
     if first_run and not send_seed:
-        for r in approved:
+        for r in to_notify:
             notified.add(r["key"])
         vacations.save_notified(notified)
-        print(f"Отпуска: первый запуск — запомнил {len(approved)} согласованных, "
-              "уведомления не слал. Новые согласования будут уведомляться.")
+        print(f"Отпуска: первый запуск — запомнил {len(to_notify)} строк, "
+              "уведомления не слал. Новые статусы будут уведомляться.")
         return
 
     sent, skipped_no_id, failed = [], [], []
-    for r in approved:
+    for r in to_notify:
         if r["key"] in notified:
             continue
         if not r.get("has_dates"):
@@ -392,7 +395,8 @@ def check_vacations(send_seed=False):
         lines = ["🌴 *Уведомления об отпусках разосланы (JOTO):*", ""]
         for r in sent:
             period = r.get("period") or f"{r['start']}–{r['end']}".strip("–")
-            lines.append(f"✅ {r['name'] or r['bitrix_id']} ({period})")
+            mark = "✅ согласовано" if r.get("stage") == "approved" else "📝 на согласовании"
+            lines.append(f"{mark}: {r['name'] or r['bitrix_id']} ({period})")
         if skipped_no_id:
             lines.append("")
             lines.append("⚠️ Без ID Битрикс (не отправлено): "

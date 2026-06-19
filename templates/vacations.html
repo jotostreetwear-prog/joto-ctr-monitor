@@ -80,7 +80,7 @@
   <div class="wrap">
     <table>
       <thead><tr>
-        <th>Сотрудник</th><th>Даты отпуска</th><th>Статус</th><th>Уведомление</th>
+        <th>Сотрудник</th><th>Даты отпуска</th><th>Статус</th><th>Комментарий</th><th>Уведомление</th>
       </tr></thead>
       <tbody id="rows"><tr><td class="empty" colspan="5">Загрузка…</td></tr></tbody>
     </table>
@@ -137,22 +137,24 @@ function render(){
 
   if(!rows.length){
     document.getElementById('rows').innerHTML =
-      `<tr><td class="empty" colspan="4">${DATA.ok?'Нет строк в таблице':'Нет данных'}</td></tr>`;
+      `<tr><td class="empty" colspan="5">${DATA.ok?'Нет строк в таблице':'Нет данных'}</td></tr>`;
   } else {
     document.getElementById('rows').innerHTML = rows.map(r=>{
-      const statusPill = r.approved
-        ? `<span class="pill green">${esc(r.status||'Согласовано')}</span>`
-        : `<span class="pill gray">${esc(r.status||'—')}</span>`;
+      let statusPill = `<span class="pill gray">${esc(r.status||'—')}</span>`;
+      if(r.stage==='approved') statusPill = `<span class="pill green">${esc(r.status||'Согласовано')}</span>`;
+      else if(r.stage==='pending') statusPill = `<span class="pill blue">${esc(r.status||'На согласовании')}</span>`;
       let notifyPill = '<span class="pill gray">—</span>';
       if(r.notified) notifyPill = '<span class="pill blue">🔔 Уведомлён</span>';
-      else if(r.approved && !r.has_dates) notifyPill = '<span class="pill gray">без отпуска</span>';
-      else if(r.approved && !r.bitrix_id) notifyPill = '<span class="pill red">нет ID</span>';
-      else if(r.approved) notifyPill = '<span class="pill gray">в очереди</span>';
+      else if(r.stage && !r.has_dates) notifyPill = '<span class="pill gray">без отпуска</span>';
+      else if(r.stage && !r.bitrix_id) notifyPill = '<span class="pill red">нет ID</span>';
+      else if(r.stage) notifyPill = '<span class="pill gray">в очереди</span>';
       const period = esc(r.period) || (r.start?esc(r.start)+(r.end?' – '+esc(r.end):''):'—');
+      const comment = esc(r.comment) || '<span style="color:var(--muted)">—</span>';
       return `<tr>
         <td class="name">${esc(r.name)||'—'}${r.bitrix_id?` <span style="color:var(--muted);font-weight:400">#${esc(r.bitrix_id)}</span>`:''}</td>
         <td>${period}</td>
         <td>${statusPill}</td>
+        <td>${comment}</td>
         <td>${notifyPill}</td>
       </tr>`;
     }).join('');
