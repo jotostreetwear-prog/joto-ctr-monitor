@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import checklist
 import vision
 import competitors
+import vacations
 
 app = Flask(__name__)
 
@@ -319,6 +320,122 @@ def notify_checklist(force_compute=False):
     print(f"Чек-лист: сводка отправлена Татьяне ({len(worst)} с недочётами)")
 
 
+# ===================== ГРАФИК ОТПУСКОВ =====================
+
+# ID руководителя/HR для сводки о разосланных уведомлениях (по умолчанию — Татьяна).
+VACATIONS_SUMMARY_TO = os.environ.get("VACATIONS_SUMMARY_TO", TATIANA_USER_ID).strip()
+
+
+def check_vacations(send_seed=False):
+    """Читает график отпусков и шлёт сотрудникам уведомления о согласованных.
+
+    send_seed=True — принудительно уведомить все согласованные строки
+    (даже на первом запуске). По умолчанию первый запуск только запоминает
+    текущие согласованные отпуска, никого не беспокоя.
+    """
+    print(f"Отпуска: проверка {datetime.now()}")
+
+    if not B24_WEBHOOK:
+        print("Отпуска: нет B24_WEBHOOK — некуда слать")
+        return
+
+    data = vacations.fetch_rows()
+    if not data.get("ok"):
+        print(f"Отпуска: не удалось прочитать таблицу — {data.get('error')}")
+        return
+
+    rows = data["rows"]
+    approved = [r for r in rows if r["approved"]]
+    print(f"Отпуска: всего строк {len(rows)}, согласованных {len(approved)}")
+
+    notified = vacations.load_notified()
+    first_run = notified is None
+    if first_run:
+        notified = set()
+
+    # Первый запуск без принудительной отправки — просто запоминаем текущие
+    # согласованные, чтобы не разослать всем разом исторические отпуска.
+    if first_run and not send_seed:
+        for r in approved:
+            notified.add(r["key"])
+        vacations.save_notified(notified)
+        print(f"Отпуска: первый запуск — запомнил {len(approved)} согласованных, "
+              "уведомления не слал. Новые согласования будут уведомляться.")
+        return
+
+    sent, skipped_no_id, failed = [], [], []
+    for r in approved:
+        if r["key"] in notified:
+            continue
+        if not r["bitrix_id"]:
+            skipped_no_id.append(r)
+            continue
+        status, _ = send_b24_message(
+            r["bitrix_id"], vacations.employee_message(r), from_bot=True,
+        )
+        if status == 200:
+            notified.add(r["key"])
+            sent.append(r)
+        else:
+            failed.append(r)
+
+    if sent or skipped_no_id:
+        vacations.save_notified(notified)
+
+    print(f"Отпуска: отправлено {len(sent)}, без ID {len(skipped_no_id)}, "
+          f"ошибок {len(failed)}")
+
+    # Короткая сводка руководителю/HR (если кому-то реально ушли уведомления).
+    if sent and VACATIONS_SUMMARY_TO:
+        lines = ["🌴 *Уведомления об отпусках разосланы:*", ""]
+        for r in sent:
+            period = f"{r['start']}–{r['end']}".strip("–")
+            lines.append(f"✅ {r['name'] or r['bitrix_id']} ({period})")
+        if skipped_no_id:
+            lines.append("")
+            lines.append("⚠️ Без ID Битрикс (не отправлено): "
+                         + ", ".join(r["name"] or "?" for r in skipped_no_id))
+        send_b24_message(VACATIONS_SUMMARY_TO, "\n".join(lines), from_bot=True)
+
+
+@app.route("/vacations", methods=["GET", "POST"])
+def vacations_page():
+    return render_template("vacations.html")
+
+
+@app.route("/vacations/install", methods=["GET", "POST"])
+def vacations_install():
+    return render_template("vacations.html")
+
+
+@app.route("/vacations/data", methods=["GET"])
+def vacations_data():
+    data = vacations.fetch_rows()
+    notified = vacations.load_notified()
+    sent_keys = set() if notified is None else notified
+    for r in data.get("rows", []):
+        r["notified"] = r["key"] in sent_keys
+    data["sheet_url"] = vacations.csv_url()
+    return jsonify(data)
+
+
+@app.route("/vacations/check-now", methods=["GET"])
+def vacations_check_now():
+    # /vacations/check-now?seed=1 — принудительно уведомить все согласованные
+    seed = request.args.get("seed") in ("1", "true", "yes")
+    threading.Thread(target=check_vacations, kwargs={"send_seed": seed}, daemon=True).start()
+    return jsonify({"ok": True, "message": "Проверка графика отпусков запущена",
+                    "seed": seed})
+
+
+@app.route("/vacations/debug", methods=["GET"])
+def vacations_debug():
+    """Что приложение видит в таблице: распознанные колонки и разобранные строки."""
+    data = vacations.fetch_rows()
+    data["csv_url"] = vacations.csv_url()
+    return jsonify(data)
+
+
 @app.route("/competitors", methods=["GET", "POST"])
 def competitors_page():
     return render_template("competitors.html")
@@ -425,6 +542,7 @@ def index():
     return (
         "JOTO CTR Monitor работает ✓<br>"
         "Чек-лист карточек: <a href='/checklist'>/checklist</a><br>"
+        "График отпусков: <a href='/vacations'>/vacations</a><br>"
         "Анализ конкурентов: <a href='/competitors'>/competitors</a>"
     )
 
@@ -520,8 +638,12 @@ def run_scheduler():
     # Автоматический пересчёт чек-листа каждые N часов (по умолчанию 1 — раз в час)
     refresh_h = int(os.environ.get("CHECKLIST_REFRESH_HOURS", "1"))
     schedule.every(refresh_h).hours.do(checklist.compute_checklist)
+    # Проверка графика отпусков — каждые N минут (по умолчанию 15)
+    vac_min = int(os.environ.get("VACATIONS_CHECK_MINUTES", "15"))
+    schedule.every(vac_min).minutes.do(check_vacations)
     print(f"Планировщик запущен — CTR в 09:00 МСК, бюджет каждые 30 мин, "
-          f"чек-лист: сводка в 10:00 МСК, авто-пересчёт каждые {refresh_h} ч")
+          f"чек-лист: сводка в 10:00 МСК, авто-пересчёт каждые {refresh_h} ч, "
+          f"отпуска каждые {vac_min} мин")
     while True:
         schedule.run_pending()
         time.sleep(60)
@@ -530,5 +652,7 @@ if __name__ == "__main__":
     threading.Thread(target=run_scheduler, daemon=True).start()
     # Первичный расчёт чек-листа в фоне, чтобы дашборд сразу был с данными
     threading.Thread(target=checklist.compute_checklist, daemon=True).start()
+    # Первичная проверка отпусков (на первом запуске только запомнит согласованные)
+    threading.Thread(target=check_vacations, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
