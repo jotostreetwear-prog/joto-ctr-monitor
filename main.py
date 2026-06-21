@@ -556,6 +556,14 @@ def checklist_debug_vision():
     return jsonify(checklist.debug_vision(nm))
 
 
+@app.route("/checklist/clear-vision-cache", methods=["GET", "POST"])
+def checklist_clear_vision_cache():
+    """Сброс кэша распознавания сетки — чтобы пересчитать карточки заново
+    после смены провайдера/модели."""
+    removed = vision.clear_cache()
+    return jsonify({"ok": True, "removed_entries": removed})
+
+
 # ===================== FLASK =====================
 
 @app.route("/", methods=["GET"])
