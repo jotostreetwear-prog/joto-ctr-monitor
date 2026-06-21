@@ -187,6 +187,52 @@ def _vision_grid(content, media_type):
         return None
 
 
+def debug_photo(photo_url):
+    """Диагностика по одному фото: скачивание + сырой ответ модели.
+    Кэш не используется — всегда реальный запрос."""
+    info = {"url": photo_url, "mode": mode(), "enabled": enabled()}
+    if not enabled():
+        info["error"] = "распознавание отключено (нет GEMINI_API_KEY/ANTHROPIC_API_KEY/OCR)"
+        return info
+    content, media_type = _download(photo_url)
+    if content is None:
+        info["error"] = "не удалось скачать фото"
+        return info
+    info["media_type"] = media_type
+    info["bytes"] = len(content)
+    try:
+        if GEMINI_API_KEY:
+            b64 = base64.b64encode(content).decode()
+            resp = httpx.post(
+                f"{GEMINI_URL}/{GEMINI_MODEL}:generateContent",
+                params={"key": GEMINI_API_KEY},
+                headers={"content-type": "application/json"},
+                json={
+                    "contents": [{"parts": [
+                        {"inline_data": {"mime_type": media_type, "data": b64}},
+                        {"text": PROMPT},
+                    ]}],
+                    "generationConfig": {"maxOutputTokens": 8, "temperature": 0},
+                },
+                timeout=60,
+            )
+            info["http_status"] = resp.status_code
+            if resp.status_code != 200:
+                info["raw"] = resp.text[:400]
+                info["result"] = None
+                return info
+            cands = resp.json().get("candidates") or []
+            parts = (cands[0].get("content") or {}).get("parts") or [{}] if cands else [{}]
+            text = parts[0].get("text", "")
+            info["raw_answer"] = text
+            info["result"] = bool(text.strip().lower().startswith(("да", "yes")))
+        else:
+            info["result"] = detect_size_grid(photo_url)
+    except Exception as e:
+        info["error"] = f"{type(e).__name__}: {e}"
+    return info
+
+
 def detect_size_grid(photo_url):
     """True/False — есть ли размерная сетка. None, если определить не удалось."""
     if not photo_url or not enabled():

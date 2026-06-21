@@ -632,6 +632,42 @@ def debug_first_card():
     }
 
 
+def debug_vision(nm_id=None):
+    """Диагностика распознавания сетки: режим, ключи и результат по фото.
+    nm_id — конкретный артикул; если не задан, берём первую карточку кабинета."""
+    out = {
+        "vision_mode": vision.mode(),
+        "vision_enabled": vision.enabled(),
+        "gemini_key_set": bool(vision.GEMINI_API_KEY),
+        "gemini_model": vision.GEMINI_MODEL,
+        "cache_path": vision.CACHE_PATH,
+        "grid_scan_limit": GRID_SCAN_LIMIT,
+    }
+    try:
+        cards = _fetch_cards()
+    except Exception as e:
+        out["error"] = f"не удалось получить карточки: {e}"
+        return out
+    card = None
+    if nm_id:
+        card = next((c for c in cards if c.get("nmID") == nm_id), None)
+        if card is None:
+            out["error"] = f"карточка {nm_id} не найдена в кабинете"
+            return out
+    else:
+        card = cards[0] if cards else None
+    if card is None:
+        out["error"] = "нет карточек"
+        return out
+    out["nm_id"] = card.get("nmID")
+    out["vendor_code"] = card.get("vendorCode")
+    urls = [u for u in (_photo_url(p) for p in _photos(card)) if u]
+    out["photo_count"] = len(urls)
+    out["photos"] = [vision.debug_photo(u) for u in urls[:GRID_SCAN_LIMIT]]
+    out["grid_result"] = _detect_grid_on_photos(card)
+    return out
+
+
 def diagnose():
     """Проверяет доступ токена к нужным WB API и возвращает коды ответов.
 
