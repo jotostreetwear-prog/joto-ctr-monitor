@@ -412,9 +412,9 @@ def _photo_url(photo):
     return photo if isinstance(photo, str) else None
 
 
-def _detect_grid_on_photos(card):
-    """True/False — нарисована ли размерная сетка на одном из фото карточки
-    (распознаётся Gemini Vision). None — если распознавание недоступно/не определило.
+def _grid_photo_index(card):
+    """Номер фото (с 1) с размерной сеткой. 0 — ни на одном фото сетки нет,
+    None — распознавание недоступно/не удалось определить.
     Сканируем фото по очереди и выходим на первом найденном."""
     if not vision.enabled():
         return None
@@ -422,14 +422,14 @@ def _detect_grid_on_photos(card):
     if not urls:
         return None
     determined = False
-    for url in urls[:GRID_SCAN_LIMIT]:
+    for i, url in enumerate(urls[:GRID_SCAN_LIMIT]):
         res = vision.detect_size_grid(url)
         if res is True:
-            return True
+            return i + 1
         if res is not None:
             determined = True
-    # все просмотренные фото без сетки → False; если ни одно не удалось распознать → None
-    return False if determined else None
+    # все просмотренные фото без сетки → 0; если ни одно не распозналось → None
+    return 0 if determined else None
 
 
 def _auto_metrics(card, fb):
@@ -493,11 +493,14 @@ def _enrich(item, card, ov):
         item["metrics"]["rich_content"] = pub["rich_content"]
     # Сетка — реально нарисованная размерная сетка на фото (Gemini Vision);
     # запасной сигнал — наличие заполненной таблицы размеров (sizes_table).
-    grid = _detect_grid_on_photos(card)
-    if grid is None:
+    grid_idx = _grid_photo_index(card)
+    if grid_idx is not None:
+        item["metrics"]["grid_4th"] = grid_idx > 0
+        item["grid_index"] = grid_idx  # 0 — сетки нет; >0 — номер фото с сеткой
+    else:
         grid = pub.get("grid_4th")
-    if grid is not None:
-        item["metrics"]["grid_4th"] = grid
+        if grid is not None:
+            item["metrics"]["grid_4th"] = grid
     # Рекомендации продавца — поле has_seller_recommendations из card.json
     if pub.get("recommendations") is not None:
         item["metrics"]["recommendations"] = pub["recommendations"]
