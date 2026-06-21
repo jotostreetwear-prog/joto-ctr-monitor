@@ -33,6 +33,8 @@ CONTENT_API = "https://content-api.wildberries.ru"
 PRICES_API = "https://discounts-prices-api.wildberries.ru"
 FEEDBACKS_API = "https://feedbacks-api.wildberries.ru"
 
+# Минимум фото в карточке для «зелёной» метрики (меньше — красный)
+PHOTO_MIN = int(os.environ.get("CHECKLIST_PHOTO_MIN", "6"))
 # Сколько заполненных характеристик считаем достаточным для «зелёной» метрики
 CHARS_THRESHOLD = int(os.environ.get("CHECKLIST_CHARS_MIN", "10"))
 # Минимальный рейтинг для «зелёной» метрики
@@ -77,7 +79,7 @@ OVERRIDES_PATH = (
 #   manual — выставляется вручную в дашборде
 # Порядок совпадает с макетом дашборда.
 METRICS = [
-    ("photo10",        "Фото (10 шт)",      "auto"),
+    ("photo10",        f"Фото ({PHOTO_MIN}+ шт)",  "auto"),
     ("pinned_reviews", "Закреп. отзывы",    "manual"),
     ("photo_reviews",  "Фотоотзывы",        "auto"),
     ("video",          "Видео",             "auto"),
@@ -399,7 +401,7 @@ def _auto_metrics(card, fb):
     chars_filled = sum(1 for c in chars if c.get("value"))
 
     return {
-        "photo10": len(photos) >= 10,
+        "photo10": len(photos) >= PHOTO_MIN,
         "photo_reviews": bool(fb.get("has_photo")),
         "video": bool(video),
         "rich_content": len(desc) >= 1000,
@@ -509,6 +511,7 @@ def compute_checklist():
                 "category": card.get("subjectName") or "Без категории",
                 "chars": chars,
                 "metrics": ordered,
+                "photo_count": len(_photos(card)),
             }
             _recalc_item(item)
             items.append(item)
