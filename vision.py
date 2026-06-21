@@ -108,6 +108,18 @@ def _save_cache(cache):
         print(f"Vision: не удалось сохранить кэш: {e}")
 
 
+def clear_cache():
+    """Очистить кэш распознавания. Возвращает число удалённых записей."""
+    with _cache_lock:
+        n = len(_load_cache())
+        try:
+            if os.path.exists(CACHE_PATH):
+                os.remove(CACHE_PATH)
+        except Exception as e:
+            print(f"Vision: не удалось удалить кэш: {e}")
+        return n
+
+
 def _download(photo_url):
     r = httpx.get(photo_url, timeout=30, follow_redirects=True)
     if r.status_code != 200:
