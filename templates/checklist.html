@@ -57,6 +57,7 @@
   .name a{color:var(--orange);text-decoration:none} .name a:hover{text-decoration:underline}
   .sq{display:inline-block;width:22px;height:22px;border-radius:6px}
   .sq.g{background:var(--green)} .sq.r{background:var(--red)}
+  .sq.num{color:#fff;font-size:12px;font-weight:700;line-height:22px;text-align:center}
   .sq.click{cursor:pointer;outline:2px solid transparent}
   .sq.click:hover{outline:2px solid #c3cbd6}
   th.sep,td.sep{border-left:2px solid #d4dae3}
@@ -226,6 +227,11 @@ function renderRows(){
       const editable = m.kind!=='auto';
       const cls = 'sq '+(ok?'g':'r')+(editable?' click':'');
       const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
+      // для метрики «Фото» показываем фактическое число фото внутри квадрата
+      if(m.key==='photo10' && it.photo_count!=null){
+        const t = `${it.photo_count} фото в карточке`;
+        return `<td><span class="sq num ${ok?'g':'r'}" title="${t}">${it.photo_count}</span></td>`;
+      }
       return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
     }).join('');
     const scoreCell = `<td class="sep"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
