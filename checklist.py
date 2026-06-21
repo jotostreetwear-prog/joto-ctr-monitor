@@ -666,8 +666,19 @@ def debug_vision(nm_id=None):
     out["vendor_code"] = card.get("vendorCode")
     urls = [u for u in (_photo_url(p) for p in _photos(card)) if u]
     out["photo_count"] = len(urls)
-    out["photos"] = [vision.debug_photo(u) for u in urls[:GRID_SCAN_LIMIT]]
-    out["grid_result"] = _detect_grid_on_photos(card)
+    photos = [vision.debug_photo(u) for u in urls[:GRID_SCAN_LIMIT]]
+    out["photos"] = photos
+    # Агрегат и номер фото с сеткой выводим из уже полученных ответов,
+    # чтобы не сканировать фото повторно (иначе шлюз отдаёт таймаут).
+    results = [p.get("result") for p in photos]
+    grid_index = next((i + 1 for i, r in enumerate(results) if r is True), None)
+    out["grid_photo_index"] = grid_index
+    if grid_index is not None:
+        out["grid_result"] = True
+    elif any(r is not None for r in results):
+        out["grid_result"] = False
+    else:
+        out["grid_result"] = None
     return out
 
 
