@@ -267,6 +267,13 @@ function renderRows(){
         const t = `${it.photo_count} фото в карточке`;
         return `<td data-fval="${it.photo_count}"><span class="sq num ${ok?'g':'r'}" title="${t}">${it.photo_count}</span></td>`;
       }
+      // для метрики «Размерная сетка» показываем номер фото с сеткой;
+      // зелёный — если сетка на 4-м фото, красный — на любом другом
+      if(m.key==='grid_4th' && it.grid_index){
+        const good = it.grid_index===4;
+        const t = `Размерная сетка на фото №${it.grid_index}` + (good?'' : ' (ожидается 4-е)');
+        return `<td data-fval="${it.grid_index}"><span class="sq num ${good?'g':'r'}" title="${t}">${it.grid_index}</span></td>`;
+      }
       // в data-fval кладём текстовое значение, чтобы по нему работал фильтр (квадрат текста не содержит)
       return `<td data-fval="${ok?'Да':'Нет'}"><span class="${cls}" ${on} title="${m.label}"></span></td>`;
     }).join('');
