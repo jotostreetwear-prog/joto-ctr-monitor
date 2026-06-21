@@ -80,11 +80,11 @@
   #checktable th .iw-hl{cursor:pointer;user-select:none;display:inline-block}
   #checktable th .iw-hl:hover{color:#2f6df6}
   #checktable th .iw-sortar{color:#2f6df6;font-size:10px;font-weight:700}
-  #checktable th .iw-fbtn{position:absolute;right:4px;top:6px;padding:2px 3px;border:0;background:transparent;
-    color:#aab2c0;cursor:pointer;border-radius:4px;line-height:0}
+  /* воронка идёт сразу после названия столбца (inline), а не у края ячейки */
+  #checktable th .iw-fbtn{display:inline-flex;align-items:center;vertical-align:middle;margin-left:3px;
+    padding:2px;border:0;background:transparent;color:#aab2c0;cursor:pointer;border-radius:4px;line-height:0}
   #checktable th .iw-fbtn:hover{background:#e8f0ff;color:#2f6df6}
   #checktable th .iw-fbtn.active{color:#2f6df6;background:#e8f0ff}
-  #checktable th:has(.iw-fbtn){padding-right:20px}
   .ost-fmenu{position:fixed;z-index:600;width:222px;background:#fff;border:1px solid #e3e3ea;border-radius:10px;
     box-shadow:0 8px 30px rgba(0,0,0,.15);padding:8px;text-align:left;color:var(--ink)}
   .ost-fmenu .ost-fm-sort{display:flex;flex-direction:column;gap:1px;margin-bottom:6px}
