@@ -39,6 +39,11 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 _ALLOWED_MEDIA = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
+# Какой провайдер использовать: auto (по доступным ключам), gemini, anthropic, ocr.
+# Задаётся переменной VISION_PROVIDER. Нужно, чтобы можно было принудительно
+# выбрать Claude, даже когда задан GEMINI_API_KEY.
+VISION_PROVIDER = os.environ.get("VISION_PROVIDER", "auto").strip().lower()
+
 PROMPT = (
     "Это одно из фото карточки товара на Wildberries. "
     "На изображении есть размерная сетка — таблица размеров "
@@ -62,12 +67,17 @@ def _ocr_available():
         return False
 
 
-def enabled():
-    """Есть ли вообще способ определить сетку автоматически."""
-    return bool(GEMINI_API_KEY) or bool(ANTHROPIC_API_KEY) or _ocr_available()
-
-
 def mode():
+    """Активный провайдер распознавания с учётом VISION_PROVIDER.
+    'gemini' | 'vision' (Claude) | 'ocr' | 'off'."""
+    p = VISION_PROVIDER
+    if p in ("anthropic", "claude", "vision"):
+        return "vision" if ANTHROPIC_API_KEY else "off"
+    if p == "gemini":
+        return "gemini" if GEMINI_API_KEY else "off"
+    if p == "ocr":
+        return "ocr" if _ocr_available() else "off"
+    # auto — по доступным ключам (от точного к запасному)
     if GEMINI_API_KEY:
         return "gemini"
     if ANTHROPIC_API_KEY:
@@ -75,6 +85,11 @@ def mode():
     if _ocr_available():
         return "ocr"
     return "off"
+
+
+def enabled():
+    """Есть ли вообще способ определить сетку автоматически."""
+    return mode() != "off"
 
 
 def _load_cache():
@@ -200,9 +215,11 @@ def debug_photo(photo_url):
         return info
     info["media_type"] = media_type
     info["bytes"] = len(content)
+    prov = mode()
+    info["provider"] = prov
     try:
-        if GEMINI_API_KEY:
-            b64 = base64.b64encode(content).decode()
+        b64 = base64.b64encode(content).decode()
+        if prov == "gemini":
             resp = httpx.post(
                 f"{GEMINI_URL}/{GEMINI_MODEL}:generateContent",
                 params={"key": GEMINI_API_KEY},
@@ -224,6 +241,38 @@ def debug_photo(photo_url):
             cands = resp.json().get("candidates") or []
             parts = (cands[0].get("content") or {}).get("parts") or [{}] if cands else [{}]
             text = parts[0].get("text", "")
+            info["raw_answer"] = text
+            info["result"] = bool(text.strip().lower().startswith(("да", "yes")))
+        elif prov == "vision":
+            info["model"] = VISION_MODEL
+            resp = httpx.post(
+                ANTHROPIC_URL,
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": VISION_MODEL,
+                    "max_tokens": 8,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "source": {
+                                "type": "base64", "media_type": media_type, "data": b64,
+                            }},
+                            {"type": "text", "text": PROMPT},
+                        ],
+                    }],
+                },
+                timeout=60,
+            )
+            info["http_status"] = resp.status_code
+            if resp.status_code != 200:
+                info["raw"] = resp.text[:400]
+                info["result"] = None
+                return info
+            text = (resp.json().get("content") or [{}])[0].get("text", "")
             info["raw_answer"] = text
             info["result"] = bool(text.strip().lower().startswith(("да", "yes")))
         else:
@@ -248,12 +297,15 @@ def detect_size_grid(photo_url):
         content, media_type = _download(photo_url)
         if content is None:
             return None
-        if GEMINI_API_KEY:
+        prov = mode()
+        if prov == "gemini":
             result = _gemini_grid(content, media_type)
-        elif ANTHROPIC_API_KEY:
+        elif prov == "vision":
             result = _vision_grid(content, media_type)
-        else:
+        elif prov == "ocr":
             result = _ocr_grid(content)
+        else:
+            result = None
         if result is not None:
             with _cache_lock:
                 cache = _load_cache()

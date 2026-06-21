@@ -638,8 +638,11 @@ def debug_vision(nm_id=None):
     out = {
         "vision_mode": vision.mode(),
         "vision_enabled": vision.enabled(),
+        "vision_provider_setting": vision.VISION_PROVIDER,
         "gemini_key_set": bool(vision.GEMINI_API_KEY),
         "gemini_model": vision.GEMINI_MODEL,
+        "anthropic_key_set": bool(vision.ANTHROPIC_API_KEY),
+        "anthropic_model": vision.VISION_MODEL,
         "cache_path": vision.CACHE_PATH,
         "grid_scan_limit": GRID_SCAN_LIMIT,
     }
