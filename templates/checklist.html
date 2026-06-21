@@ -74,6 +74,32 @@
     cursor:pointer;font-weight:600;font-size:15px}
   button.refresh:disabled{opacity:.5;cursor:default}
   .legend{font-size:12px;color:var(--muted);margin-top:14px}
+
+  /* ===== Excel-фильтр/сортировка по столбцам ===== */
+  /* th у нас sticky — этого достаточно для позиционирования воронки (absolute) */
+  #checktable th .iw-hl{cursor:pointer;user-select:none;display:inline-block}
+  #checktable th .iw-hl:hover{color:#2f6df6}
+  #checktable th .iw-sortar{color:#2f6df6;font-size:10px;font-weight:700}
+  #checktable th .iw-fbtn{position:absolute;right:4px;top:6px;padding:2px 3px;border:0;background:transparent;
+    color:#aab2c0;cursor:pointer;border-radius:4px;line-height:0}
+  #checktable th .iw-fbtn:hover{background:#e8f0ff;color:#2f6df6}
+  #checktable th .iw-fbtn.active{color:#2f6df6;background:#e8f0ff}
+  #checktable th:has(.iw-fbtn){padding-right:20px}
+  .ost-fmenu{position:fixed;z-index:600;width:222px;background:#fff;border:1px solid #e3e3ea;border-radius:10px;
+    box-shadow:0 8px 30px rgba(0,0,0,.15);padding:8px;text-align:left;color:var(--ink)}
+  .ost-fmenu .ost-fm-sort{display:flex;flex-direction:column;gap:1px;margin-bottom:6px}
+  .ost-fmenu .ost-fm-sort button{text-align:left;border:0;background:transparent;font:inherit;font-size:13px;padding:7px 9px;border-radius:6px;cursor:pointer}
+  .ost-fmenu .ost-fm-sort button:hover{background:#f2f2f5}
+  .ost-fmenu .ost-fm-search{padding:0 2px 6px}
+  .ost-fmenu .ost-fm-search input{width:100%;font:inherit;font-size:12.5px;padding:7px 9px;border:1px solid #e3e3ea;border-radius:7px;outline:none}
+  .ost-fmenu .ost-fm-all{display:flex;align-items:center;gap:7px;padding:6px 9px;border-top:1px solid #eee;cursor:pointer;font-size:13px}
+  .ost-fmenu .ost-fm-list{max-height:210px;overflow:auto;border-top:1px solid #eee;padding:4px 0}
+  .ost-fmenu .ost-fm-row{display:flex;align-items:center;gap:7px;padding:5px 9px;cursor:pointer;border-radius:6px;white-space:nowrap;font-size:13px}
+  .ost-fmenu .ost-fm-row:hover{background:#f2f2f5}
+  .ost-fmenu .ost-fm-row span{overflow:hidden;text-overflow:ellipsis}
+  .ost-fmenu .ost-fm-foot{display:flex;gap:6px;padding:7px 4px 2px;border-top:1px solid #eee}
+  .ost-fmenu .ost-fm-foot button{flex:1;border:1px solid #e3e3ea;background:#fff;font:inherit;font-weight:600;font-size:12.5px;padding:7px;border-radius:7px;cursor:pointer}
+  .ost-fmenu .ost-fm-apply{background:#2f6df6!important;color:#fff!important;border-color:#2f6df6!important}
 </style>
 <!-- SDK Битрикс24: подключается, чтобы страница корректно жила внутри портала (iframe) -->
 <script src="//api.bitrix24.com/api/v1/"></script>
@@ -207,6 +233,7 @@ function populateCats(){
 
 function onCat(){
   category = document.getElementById('catSelect').value;
+  EXCEL_STATE = { sortCol:null, asc:true, filters:{} };  // состав колонок меняется — сбрасываем фильтры
   renderStats(summarize(DATA.items.filter(inCategory)));
   renderHead();  // пересчитать столбцы характеристик под выбранную категорию
   renderRows();
@@ -237,11 +264,12 @@ function renderRows(){
       // для метрики «Фото» показываем фактическое число фото внутри квадрата
       if(m.key==='photo10' && it.photo_count!=null){
         const t = `${it.photo_count} фото в карточке`;
-        return `<td><span class="sq num ${ok?'g':'r'}" title="${t}">${it.photo_count}</span></td>`;
+        return `<td data-fval="${it.photo_count}"><span class="sq num ${ok?'g':'r'}" title="${t}">${it.photo_count}</span></td>`;
       }
-      return `<td><span class="${cls}" ${on} title="${m.label}"></span></td>`;
+      // в data-fval кладём текстовое значение, чтобы по нему работал фильтр (квадрат текста не содержит)
+      return `<td data-fval="${ok?'Да':'Нет'}"><span class="${cls}" ${on} title="${m.label}"></span></td>`;
     }).join('');
-    const scoreCell = `<td class="sep"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
+    const scoreCell = `<td class="sep" data-fval="${it.score}"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
         <div class="pbar"><i style="width:${it.score}%;background:${color(it.score)}"></i></div></td>`;
     const map={}; (it.chars||[]).forEach(c=> map[c.name]=c);
     const charCells = CHARCOLS.map((name,i)=>{
@@ -249,11 +277,12 @@ function renderRows(){
       const filled = !!(c && c.filled);
       // характеристики тянутся из WB автоматически и доступны только для чтения
       const t = name + (filled ? ': '+(c.value||'') : ': не заполнено');
-      return `<td class="${i===0?'sep':''}"><span class="sq ${filled?'g':'r'}" title="${t}"></span></td>`;
+      return `<td class="${i===0?'sep':''}" data-fval="${filled?'Да':'Нет'}"><span class="sq ${filled?'g':'r'}" title="${t}"></span></td>`;
     }).join('');
     return `<tr>${nameCell}${metricCells}${charCells}${scoreCell}</tr>
-    <tr id="d-${n}" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
+    <tr id="d-${n}" data-detail="1" style="display:none"><td class="left" colspan="${cols}">${charsHtml(it)}</td></tr>`;
   }).join('');
+  attachExcel();  // навешиваем сортировку/фильтр на заголовки после перерисовки
 }
 
 function charsHtml(it){
@@ -273,6 +302,81 @@ function charsHtml(it){
 function toggleRow(n){
   const d=document.getElementById('d-'+n);
   if(d){ d.style.display = d.style.display==='none' ? '' : 'none'; resizeBX(); }
+}
+
+// ===== Excel-фильтр/сортировка по столбцам =====
+// Состояние живёт вне перерисовки, чтобы фильтры/сортировка не сбрасывались
+// при ручной отметке или авто-обновлении. Сбрасываем при смене категории
+// (там меняется состав колонок характеристик).
+let EXCEL_STATE = { sortCol:null, asc:true, filters:{} };
+let iwMenuEl = null;
+function iwCloseMenu(){ if(iwMenuEl){ iwMenuEl.remove(); iwMenuEl=null; document.removeEventListener('mousedown', iwMenuOut, true); } }
+function iwMenuOut(e){ if(iwMenuEl && !iwMenuEl.contains(e.target)) iwCloseMenu(); }
+
+function attachExcel(){
+  const table = document.getElementById('checktable');
+  if(!table || !table.tHead || !table.tBodies[0]) return;
+  const ths = table.tHead.rows[0].cells;
+  const tbody = table.tBodies[0];
+  // числовые колонки: Артикул(0), Фото и Балл — для правильной сортировки
+  const photoCol = 3 + META.findIndex(m=>m.key==='photo10');
+  const scoreCol = 3 + META.length + CHARCOLS.length;
+  const numSet = {0:1}; if(photoCol>=3) numSet[photoCol]=1; numSet[scoreCol]=1;
+  // только строки-данные (без строк-раскрывашек)
+  const allRows = [].slice.call(tbody.rows).filter(r=> !r.hasAttribute('data-detail'));
+  allRows.forEach(r=>{ const nx=r.nextElementSibling; r.__detail=(nx && nx.hasAttribute('data-detail'))?nx:null; });
+  const st = EXCEL_STATE;
+  const ctext=(tr,i)=>{ const c=tr.cells[i]; if(!c) return ''; const f=c.getAttribute('data-fval'); return f!=null?f:c.textContent.trim(); };
+  const cnum=(tr,i)=> parseFloat(ctext(tr,i).replace(/\s/g,'').replace(',','.'))||0;
+  function distinct(i){ const seen={},out=[]; allRows.forEach(tr=>{ const v=ctext(tr,i); if(!(v in seen)){seen[v]=1;out.push(v);} });
+    out.sort(numSet[i]?(a,b)=>(parseFloat(a)||0)-(parseFloat(b)||0):(a,b)=>a.localeCompare(b,'ru')); return out; }
+  function passes(tr){ for(const i in st.filters){ const s=st.filters[i]; if(s&&s.size&&!s.has(ctext(tr,+i))) return false; } return true; }
+  function apply(){
+    const list = allRows.slice();
+    if(st.sortCol!=null){ const i=st.sortCol,num=numSet[i],k=st.asc?1:-1;
+      list.sort((a,b)=>{ const x=num?cnum(a,i):ctext(a,i).toLowerCase(), y=num?cnum(b,i):ctext(b,i).toLowerCase(); return x<y?-k:x>y?k:0; }); }
+    list.forEach(tr=>{ tbody.appendChild(tr); const ok=passes(tr); tr.hidden=!ok;
+      if(tr.__detail){ tbody.appendChild(tr.__detail); if(!ok) tr.__detail.style.display='none'; } });
+    [].slice.call(ths).forEach((th,idx)=>{ const sp=th.querySelector('.iw-sortar'); if(sp){ const on=st.sortCol===idx; sp.textContent=on?(st.asc?'↑':'↓'):''; }
+      const fb=th.querySelector('.iw-fbtn'); if(fb) fb.classList.toggle('active', !!(st.filters[idx]&&st.filters[idx].size)); });
+    resizeBX();
+  }
+  function iwOpenMenu(i, anchor){
+    if(iwMenuEl){ const was=iwMenuEl.dataset.col; iwCloseMenu(); if(was===String(i)) return; }
+    const vals=distinct(i), sel=st.filters[i];
+    const m=document.createElement('div'); m.className='ost-fmenu'; m.dataset.col=i;
+    m.innerHTML=
+      "<div class='ost-fm-sort'><button data-s='asc'>▲ По возрастанию</button><button data-s='desc'>▼ По убыванию</button></div>"+
+      "<div class='ost-fm-search'><input placeholder='Поиск значений…'></div>"+
+      "<label class='ost-fm-all'><input type='checkbox' class='ost-fm-allcb'> <b>(Выделить всё)</b></label>"+
+      "<div class='ost-fm-list'>"+vals.map(v=>{ const c=(!sel||sel.has(v))?' checked':''; return "<label class='ost-fm-row'><input type='checkbox' value=\""+v.replace(/"/g,'&quot;')+"\""+c+"> <span>"+(v===''?'(пусто)':v)+"</span></label>"; }).join('')+"</div>"+
+      "<div class='ost-fm-foot'><button class='ost-fm-clear'>Сбросить</button><button class='ost-fm-apply'>Применить</button></div>";
+    document.body.appendChild(m); iwMenuEl=m;
+    const rb=anchor.getBoundingClientRect(), mw=230, left=Math.min(rb.left, window.innerWidth-mw-8);
+    m.style.left=Math.max(8,left)+'px'; m.style.top=(rb.bottom+4)+'px';
+    const cbs=()=> [].slice.call(m.querySelectorAll('.ost-fm-list input'));
+    const syncAll=()=>{ m.querySelector('.ost-fm-allcb').checked=cbs().every(x=>x.checked); };
+    syncAll();
+    m.querySelector('.ost-fm-search input').oninput=function(){ const q=this.value.trim().toLowerCase(); [].slice.call(m.querySelectorAll('.ost-fm-row')).forEach(r=>{ r.style.display=r.textContent.toLowerCase().indexOf(q)===-1?'none':''; }); };
+    m.querySelector('.ost-fm-allcb').onchange=function(){ const v=this.checked; cbs().forEach(x=>{ if(x.closest('.ost-fm-row').style.display!=='none') x.checked=v; }); };
+    cbs().forEach(x=> x.onchange=syncAll);
+    m.querySelectorAll('.ost-fm-sort button').forEach(b=> b.onclick=()=>{ st.sortCol=i; st.asc=b.dataset.s==='asc'; iwCloseMenu(); apply(); });
+    m.querySelector('.ost-fm-clear').onclick=()=>{ delete st.filters[i]; iwCloseMenu(); apply(); };
+    m.querySelector('.ost-fm-apply').onclick=()=>{ const ch=cbs().filter(x=>x.checked).map(x=>x.value); if(ch.length===vals.length) delete st.filters[i]; else st.filters[i]=new Set(ch); iwCloseMenu(); apply(); };
+    setTimeout(()=> document.addEventListener('mousedown', iwMenuOut, true), 0);
+  }
+  [].slice.call(ths).forEach((th,i)=>{
+    // оборачиваем заголовок только если ещё не обёрнут (шапку могли не перерисовывать)
+    if(!th.querySelector('.iw-fbtn')){
+      const label=th.innerHTML;
+      th.innerHTML="<span class='iw-hl'>"+label+" <span class='iw-sortar'></span></span>"+
+        "<button class='iw-fbtn' title='Фильтр'><svg viewBox='0 0 24 24' width='11' height='11' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 5h18l-7 8v6l-4 2v-8z'/></svg></button>";
+    }
+    // обработчики переподвязываем всегда — чтобы ссылались на актуальные строки
+    th.querySelector('.iw-hl').onclick=()=>{ if(st.sortCol===i) st.asc=!st.asc; else { st.sortCol=i; st.asc=!numSet[i]; } apply(); };
+    th.querySelector('.iw-fbtn').onclick=(e)=>{ e.stopPropagation(); iwOpenMenu(i, e.currentTarget); };
+  });
+  apply();
 }
 
 function render(){
