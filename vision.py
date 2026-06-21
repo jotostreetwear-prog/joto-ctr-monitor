@@ -14,14 +14,26 @@ import json
 import base64
 import hashlib
 import shutil
+import threading
 import httpx
+
+# Кэш фото анализируется из нескольких потоков (фаза 2 чек-листа) — защищаем файл
+_cache_lock = threading.Lock()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 VISION_MODEL = os.environ.get("VISION_MODEL", "claude-haiku-4-5-20251001")
-CACHE_PATH = os.environ.get("VISION_CACHE", "vision_cache.json")
+# Кэш результатов распознавания. По умолчанию — на Railway-том (переживает
+# редеплои), иначе /data или локальный файл. Можно переопределить VISION_CACHE.
+_VISION_VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+CACHE_PATH = (
+    os.environ.get("VISION_CACHE")
+    or (os.path.join(_VISION_VOL, "vision_cache.json") if _VISION_VOL
+        else "/data/vision_cache.json" if os.path.isdir("/data")
+        else "vision_cache.json")
+)
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -180,10 +192,11 @@ def detect_size_grid(photo_url):
     if not photo_url or not enabled():
         return None
 
-    cache = _load_cache()
     key = hashlib.sha1(photo_url.encode()).hexdigest()
-    if key in cache:
-        return cache[key]
+    with _cache_lock:
+        cache = _load_cache()
+        if key in cache:
+            return cache[key]
 
     try:
         content, media_type = _download(photo_url)
@@ -196,8 +209,10 @@ def detect_size_grid(photo_url):
         else:
             result = _ocr_grid(content)
         if result is not None:
-            cache[key] = result
-            _save_cache(cache)
+            with _cache_lock:
+                cache = _load_cache()
+                cache[key] = result
+                _save_cache(cache)
         return result
     except Exception as e:
         print(f"Vision: ошибка анализа {photo_url}: {e}")

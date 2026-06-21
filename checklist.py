@@ -35,6 +35,8 @@ FEEDBACKS_API = "https://feedbacks-api.wildberries.ru"
 
 # Минимум фото в карточке для «зелёной» метрики (меньше — красный)
 PHOTO_MIN = int(os.environ.get("CHECKLIST_PHOTO_MIN", "6"))
+# Сколько первых фото сканировать на размерную сетку (Gemini Vision)
+GRID_SCAN_LIMIT = int(os.environ.get("CHECKLIST_GRID_SCAN", "12"))
 # Сколько заполненных характеристик считаем достаточным для «зелёной» метрики
 CHARS_THRESHOLD = int(os.environ.get("CHECKLIST_CHARS_MIN", "10"))
 # Минимальный рейтинг для «зелёной» метрики
@@ -86,7 +88,7 @@ METRICS = [
     ("rich_content",   "Рич-контент",       "auto"),
     ("certificates",   "Сертификаты",       "manual"),
     ("barcode",        "Баркод",            "auto"),
-    ("grid_4th",       "Сетка на 4-м фото", "parse"),
+    ("grid_4th",       "Сетка на фото",     "parse"),
     ("recommendations","Рекомендации",      "parse"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
@@ -410,6 +412,26 @@ def _photo_url(photo):
     return photo if isinstance(photo, str) else None
 
 
+def _detect_grid_on_photos(card):
+    """True/False — нарисована ли размерная сетка на одном из фото карточки
+    (распознаётся Gemini Vision). None — если распознавание недоступно/не определило.
+    Сканируем фото по очереди и выходим на первом найденном."""
+    if not vision.enabled():
+        return None
+    urls = [u for u in (_photo_url(p) for p in _photos(card)) if u]
+    if not urls:
+        return None
+    determined = False
+    for url in urls[:GRID_SCAN_LIMIT]:
+        res = vision.detect_size_grid(url)
+        if res is True:
+            return True
+        if res is not None:
+            determined = True
+    # все просмотренные фото без сетки → False; если ни одно не удалось распознать → None
+    return False if determined else None
+
+
 def _auto_metrics(card, fb):
     """Считает автоматические метрики по данным карточки и отзывов."""
     photos = _photos(card)
@@ -469,9 +491,13 @@ def _enrich(item, card, ov):
     # Рич-контент — точный признак has_rich из публичной карточки
     if pub.get("rich_content") is not None:
         item["metrics"]["rich_content"] = pub["rich_content"]
-    # Сетка — наличие размерной сетки (sizes_table) в карточке
-    if pub.get("grid_4th") is not None:
-        item["metrics"]["grid_4th"] = pub["grid_4th"]
+    # Сетка — реально нарисованная размерная сетка на фото (Gemini Vision);
+    # запасной сигнал — наличие заполненной таблицы размеров (sizes_table).
+    grid = _detect_grid_on_photos(card)
+    if grid is None:
+        grid = pub.get("grid_4th")
+    if grid is not None:
+        item["metrics"]["grid_4th"] = grid
     # Рекомендации продавца — поле has_seller_recommendations из card.json
     if pub.get("recommendations") is not None:
         item["metrics"]["recommendations"] = pub["recommendations"]
