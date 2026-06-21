@@ -48,11 +48,14 @@
   .toggle.on .sw{background:var(--green)} .toggle.on .sw::after{left:21px}
   .checked{color:var(--muted)} .checked b{color:var(--ink)}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}
-  .wrap{background:var(--card);border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  .wrap{background:var(--card);border-radius:14px;overflow:auto;max-height:calc(100vh - 120px);
+    box-shadow:0 1px 3px rgba(20,30,50,.05)}
   table{border-collapse:collapse;width:100%;min-width:780px}
   th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line);font-size:11px}
-  th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;background:var(--card);vertical-align:bottom}
-  th.left,td.left{text-align:left;padding-left:14px;width:320px;min-width:320px}
+  th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;z-index:2;background:var(--card);vertical-align:bottom}
+  th.left,td.left{text-align:left;padding-left:14px;width:120px;min-width:120px}
+  th.subj,td.subj{text-align:left;width:150px;min-width:120px;color:var(--ink);font-size:12px}
+  th.vc-col,td.vc-col{text-align:left;width:150px;min-width:120px;color:var(--muted);font-size:12px}
   .name{font-weight:600;color:var(--orange);font-size:13px;line-height:1.25} .vc{color:var(--muted);font-size:11px}
   .name a{color:var(--orange);text-decoration:none} .name a:hover{text-decoration:underline}
   .sq{display:inline-block;width:22px;height:22px;border-radius:6px}
@@ -89,7 +92,7 @@
       <li>Тумблер <b>«Только с недочётами»</b> — показать карточки, где есть что доделать.</li>
       <li>Тумблер <b>«Только красные»</b> — спрятать зелёные квадраты, видно <b>только незаполненное</b>.</li>
       <li>Список <b>категорий</b> — показать одну категорию (Шорты, Худи…); характеристики подстроятся под неё.</li>
-      <li>Клик по <b>▸</b> у артикула — раскрыть все характеристики со значениями; клик по <b>названию</b> — открыть карточку на Wildberries.</li>
+      <li>Клик по <b>▸</b> у артикула — раскрыть все характеристики со значениями; клик по <b>артикулу</b> — открыть карточку на Wildberries (наведи курсор — увидишь название).</li>
       <li>Данные обновляются <b>автоматически каждый час</b>; кнопка <b>«Обновить»</b> — пересчитать прямо сейчас.</li>
     </ul>
   </details>
@@ -188,7 +191,7 @@ function renderHead(){
   }).join('');
   const charCols = CHARCOLS.map((n,i)=>`<th title="${n}" class="${i===0?'sep':''}" style="color:var(--blue)">${n.replace(/ /g,'<br>')}</th>`).join('');
   document.getElementById('head').innerHTML =
-    '<th class="left">Артикул</th>' + metricCols + charCols +
+    '<th class="left">Артикул</th><th class="subj">Предмет</th><th class="vc-col">Артикул<br>поставщика</th>' + metricCols + charCols +
     '<th class="sep">Балл</th>';
 }
 
@@ -214,14 +217,16 @@ function renderRows(){
   const rows = base.filter(it=> !onlyIssues || hasAutoDefect(it));
   const sc = document.getElementById('shownCount');
   if(sc) sc.textContent = onlyIssues ? `Показано: ${rows.length} из ${base.length}` : '';
-  const cols = META.length + CHARCOLS.length + 2;
+  const cols = META.length + CHARCOLS.length + 4;  // 3 колонки артикула + балл
   if(!rows.length){
     document.getElementById('rows').innerHTML =
       `<tr><td class="empty" colspan="${cols}">Нет артикулов для показа</td></tr>`;
     return;
   }
   document.getElementById('rows').innerHTML = rows.map((it,n)=>{
-    const nameCell = `<td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>`;
+    const nameCell = `<td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank" title="${it.name}">${it.nm_id}</a></div></td>`
+      + `<td class="subj">${it.category||'—'}</td>`
+      + `<td class="vc-col">${it.vendor_code||'—'}</td>`;
     const metricCells = META.map(m=>{
       const ok = it.metrics[m.key];
       // кликабельны только настоящие ручные метрики (которые нельзя считать из WB);
@@ -280,7 +285,7 @@ function render(){
     renderRows();
   }
   else document.getElementById('rows').innerHTML =
-    `<tr><td class="empty" colspan="${META.length+2}">${DATA.computing?'Идёт проверка карточек…':'Нет данных. Нажмите «Обновить».'}</td></tr>`;
+    `<tr><td class="empty" colspan="${META.length+4}">${DATA.computing?'Идёт проверка карточек…':'Нет данных. Нажмите «Обновить».'}</td></tr>`;
   const btn=document.getElementById('refreshBtn');
   btn.disabled = !!DATA.computing;
   btn.textContent = DATA.computing ? 'Проверяем…' : 'Обновить';
