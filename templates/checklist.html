@@ -51,7 +51,8 @@
   .wrap{background:var(--card);border-radius:14px;overflow:auto;max-height:calc(100vh - 120px);
     box-shadow:0 1px 3px rgba(20,30,50,.05)}
   table{border-collapse:collapse;width:100%;min-width:780px}
-  th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line);font-size:11px}
+  th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line);border-right:1px solid var(--line);font-size:11px}
+  th:last-child,td:last-child{border-right:0}
   th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;z-index:2;background:var(--card);vertical-align:bottom}
   th.left,td.left{text-align:left;padding-left:14px;width:120px;min-width:120px}
   th.subj,td.subj{text-align:left;width:150px;min-width:120px;color:var(--ink);font-size:12px}
