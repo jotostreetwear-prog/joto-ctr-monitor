@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>График отпусков</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#eef2f6; --card:#fff; --ink:#1f2733; --muted:#8a94a6;
+    --green:#22c55e; --red:#ef4444; --orange:#f97316; --line:#eef1f5; --blue:#3b82f6; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);padding:18px 20px;font-size:15px;line-height:1.5}
+  h1{font-size:22px;font-weight:700;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 20px;font-size:14px}
+  .howto{margin-bottom:18px}
+  .howto summary{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;
+    font-size:14px;background:var(--card);border:1px solid #d4dae3;border-radius:10px;
+    padding:9px 16px;list-style:none;color:var(--ink);user-select:none}
+  .howto summary::-webkit-details-marker{display:none}
+  .howto[open] summary{margin-bottom:12px}
+  .howto ul{background:var(--card);border-radius:14px;padding:16px 24px;margin:0;
+    box-shadow:0 1px 3px rgba(20,30,50,.05);font-size:14px;line-height:1.85;color:var(--ink)}
+  .stats{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px}
+  .stat{background:var(--card);border-radius:14px;padding:18px 22px;flex:1;min-width:150px;
+    box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  .stat .lbl{color:var(--muted);font-size:14px;margin-bottom:10px}
+  .stat .val{font-size:34px;font-weight:700}
+  .stat .val.green{color:var(--green)} .stat .val.orange{color:var(--orange)} .stat .val.blue{color:var(--blue)}
+  .bar{background:var(--card);border-radius:14px;padding:14px 22px;display:flex;align-items:center;
+    justify-content:space-between;margin-bottom:18px;box-shadow:0 1px 3px rgba(20,30,50,.05);gap:16px;flex-wrap:wrap}
+  .checked{color:var(--muted)} .checked b{color:var(--ink)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}
+  button.btn{background:var(--ink);color:#fff;border:0;border-radius:10px;padding:10px 16px;
+    cursor:pointer;font-weight:600;font-size:15px}
+  button.btn:disabled{opacity:.5;cursor:default}
+  .wrap{background:var(--card);border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  table{border-collapse:collapse;width:100%;min-width:680px}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);font-size:14px}
+  th{color:var(--muted);font-weight:700;font-size:13px;background:var(--card)}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .pill.green{background:#dcfce7;color:#15803d} .pill.gray{background:#eef1f5;color:#64748b}
+  .pill.blue{background:#dbeafe;color:#1d4ed8} .pill.red{background:#fee2e2;color:#b91c1c}
+  .empty{padding:50px;text-align:center;color:var(--muted)}
+  .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;
+    padding:12px 16px;margin-bottom:16px;font-size:14px;display:none}
+  .cols{font-size:12px;color:var(--muted);margin-top:12px}
+  .name{font-weight:600}
+</style>
+<script src="//api.bitrix24.com/api/v1/"></script>
+</head>
+<body>
+  <h1>График отпусков</h1>
+  <p class="sub">Данные берутся из Google-таблицы. После согласования сотруднику автоматически уходит уведомление в Битрикс24.</p>
+
+  <details class="howto">
+    <summary>ℹ️ Как это работает</summary>
+    <ul>
+      <li>Приложение читает таблицу графика отпусков каждые несколько минут.</li>
+      <li>Как только в колонке <b>статуса</b> у строки появляется «<b>Согласовано</b>», сотруднику из колонки <b>ID Битрикс</b> приходит личное уведомление.</li>
+      <li>Каждый отпуск уведомляется <b>один раз</b> — повторно сообщения не дублируются.</li>
+      <li>🟦 <b>Уведомлён</b> — сотруднику уже отправлено сообщение об этом отпуске.</li>
+      <li>Кнопка <b>«Проверить сейчас»</b> — запустить проверку немедленно.</li>
+    </ul>
+  </details>
+
+  <div class="warn" id="warn"></div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="bar">
+    <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+      <span class="checked"><span class="dot"></span>Обновлено: <b id="fetchedAt">—</b></span>
+    </div>
+    <button class="btn" id="checkBtn" onclick="checkNow()">Проверить сейчас</button>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead><tr>
+        <th>Сотрудник</th><th>Даты отпуска</th><th>Статус</th><th>Комментарий</th><th>Уведомление</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td class="empty" colspan="5">Загрузка…</td></tr></tbody>
+    </table>
+  </div>
+  <p class="cols" id="cols"></p>
+
+<script>
+const embedded = window.self !== window.top;
+let DATA = null;
+
+function resizeBX(){
+  if(!embedded || !window.BX24) return;
+  try{
+    if(BX24.fitWindow) BX24.fitWindow();
+    else if(BX24.resizeWindow) BX24.resizeWindow(document.body.scrollWidth, document.body.scrollHeight);
+  }catch(e){}
+}
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function render(){
+  if(!DATA) return;
+  document.getElementById('fetchedAt').textContent = DATA.fetched_at || '—';
+
+  const warn = document.getElementById('warn');
+  const cols = DATA.columns || {};
+  const missing = [];
+  if(!cols.name) missing.push('сотрудник/ФИО');
+  if(!cols.bitrix) missing.push('ID Битрикс');
+  if(!cols.status) missing.push('статус');
+  if(!cols.period && !cols.start) missing.push('даты отпуска');
+  if(!DATA.ok){
+    warn.style.display='block';
+    warn.innerHTML = '⚠️ Не удалось прочитать таблицу: '+esc(DATA.error||'неизвестная ошибка')+
+      '<br>Проверьте доступ к таблице («Доступ по ссылке») и переменную VACATIONS_SHEET_ID.';
+  } else if(missing.length){
+    warn.style.display='block';
+    warn.innerHTML = '⚠️ Не распознаны колонки: <b>'+missing.join(', ')+'</b>. '+
+      'Уведомления могут не отправиться. Проверьте заголовки таблицы или задайте их в переменных VACATIONS_COL_*.';
+  } else {
+    warn.style.display='none';
+  }
+
+  const rows = DATA.rows || [];
+  const approved = rows.filter(r=>r.approved);
+  const notified = rows.filter(r=>r.notified);
+  const stats = [
+    ['Всего строк', rows.length, ''],
+    ['Согласовано', approved.length, 'green'],
+    ['Уведомлено', notified.length, 'blue'],
+  ];
+  document.getElementById('stats').innerHTML = stats.map(([l,v,c])=>
+    `<div class="stat"><div class="lbl">${l}</div><div class="val ${c}">${v}</div></div>`).join('');
+
+  if(!rows.length){
+    document.getElementById('rows').innerHTML =
+      `<tr><td class="empty" colspan="5">${DATA.ok?'Нет строк в таблице':'Нет данных'}</td></tr>`;
+  } else {
+    document.getElementById('rows').innerHTML = rows.map(r=>{
+      let statusPill = `<span class="pill gray">${esc(r.status||'—')}</span>`;
+      if(r.stage==='approved') statusPill = `<span class="pill green">${esc(r.status||'Согласовано')}</span>`;
+      else if(r.stage==='pending') statusPill = `<span class="pill blue">${esc(r.status||'На согласовании')}</span>`;
+      let notifyPill = '<span class="pill gray">—</span>';
+      if(r.notified) notifyPill = '<span class="pill blue">🔔 Уведомлён</span>';
+      else if(r.stage && !r.has_dates) notifyPill = '<span class="pill gray">без отпуска</span>';
+      else if(r.stage && !r.bitrix_id) notifyPill = '<span class="pill red">нет ID</span>';
+      else if(r.stage) notifyPill = '<span class="pill gray">в очереди</span>';
+      const period = esc(r.period) || (r.start?esc(r.start)+(r.end?' – '+esc(r.end):''):'—');
+      const comment = esc(r.comment) || '<span style="color:var(--muted)">—</span>';
+      return `<tr>
+        <td class="name">${esc(r.name)||'—'}${r.bitrix_id?` <span style="color:var(--muted);font-weight:400">#${esc(r.bitrix_id)}</span>`:''}</td>
+        <td>${period}</td>
+        <td>${statusPill}</td>
+        <td>${comment}</td>
+        <td>${notifyPill}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  const c = DATA.columns || {};
+  document.getElementById('cols').textContent =
+    'Распознанные колонки → Сотрудник: «'+(c.name||'?')+'», ID Битрикс: «'+(c.bitrix||'?')+
+    '», Даты: «'+(c.period||c.start||'?')+'», Статус: «'+(c.status||'?')+'».';
+  resizeBX();
+}
+
+async function load(){
+  try{
+    const r = await fetch('/vacations/data');
+    DATA = await r.json();
+  }catch(e){ DATA = {ok:false, error:String(e), rows:[]}; }
+  render();
+}
+
+async function checkNow(){
+  const btn = document.getElementById('checkBtn');
+  btn.disabled = true; btn.textContent = 'Проверяем…';
+  try{ await fetch('/vacations/check-now'); }catch(e){}
+  setTimeout(async ()=>{ await load(); btn.disabled=false; btn.textContent='Проверить сейчас'; }, 2500);
+}
+
+setInterval(load, 5*60*1000);
+
+if(embedded && window.BX24){
+  try{ BX24.init(function(){ try{ BX24.installFinish(); }catch(e){} resizeBX(); }); }catch(e){}
+}
+load();
+</script>
+</body>
+</html>
