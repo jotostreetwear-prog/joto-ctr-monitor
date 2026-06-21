@@ -224,7 +224,9 @@ function renderRows(){
     const nameCell = `<td class="left"><div class="name"><span class="exp" onclick="toggleRow(${n})">▸</span><a href="https://www.wildberries.ru/catalog/${it.nm_id}/detail.aspx" target="_blank">${it.name}</a></div><div class="vc">${it.vendor_code||('nm '+it.nm_id)}</div></td>`;
     const metricCells = META.map(m=>{
       const ok = it.metrics[m.key];
-      const editable = m.kind!=='auto';
+      // кликабельны только настоящие ручные метрики (которые нельзя считать из WB);
+      // auto и parse определяются автоматически и доступны только для чтения
+      const editable = m.kind==='manual';
       const cls = 'sq '+(ok?'g':'r')+(editable?' click':'');
       const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
       // для метрики «Фото» показываем фактическое число фото внутри квадрата
