@@ -548,6 +548,14 @@ def checklist_debug_public():
     return jsonify(wb_public.debug_dump(nm))
 
 
+@app.route("/checklist/debug-vision", methods=["GET"])
+def checklist_debug_vision():
+    """Диагностика распознавания размерной сетки: режим, ключи и результат
+    Gemini по каждому фото карточки. ?nm=<артикул> — конкретный товар."""
+    nm = request.args.get("nm", type=int)
+    return jsonify(checklist.debug_vision(nm))
+
+
 # ===================== FLASK =====================
 
 @app.route("/", methods=["GET"])
