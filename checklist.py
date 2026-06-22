@@ -113,7 +113,7 @@ OVERRIDABLE_KEYS = {k for k, _, _ in METRICS if k != "barcode"}
 CHAR_INCLUDE = [
     s.strip() for s in os.environ.get(
         "CHECKLIST_CHAR_INCLUDE",
-        "Описание,Пол,Состав,Сезон,Страна производства,Ставка НДС",
+        "Описание,Пол,Состав,Страна производства,Ставка НДС",
     ).split(",") if s.strip()
 ]
 
