@@ -103,6 +103,11 @@ MANUAL_KEYS = [k for k, _, kind in METRICS if kind != "auto"]
 MANUAL_DEFAULTS = {"certificates": True}
 TOTAL_METRICS = len(METRICS)
 
+# Метрики, которые можно отмечать/переопределять вручную — все, кроме «Баркод»
+# (баркод считается автоматически и надёжно). Авто-значение остаётся базовым,
+# ручная отметка его перебивает и сохраняется.
+OVERRIDABLE_KEYS = {k for k, _, _ in METRICS if k != "barcode"}
+
 # Белый список характеристик-столбцов (после метрик). Пусто = показывать все.
 # Имена должны совпадать с названиями характеристик WB. «Описание» — по описанию.
 CHAR_INCLUDE = [
@@ -166,7 +171,7 @@ def overrides_info():
 def set_override(nm_id, metric_key, value):
     """Ручная отметка: метрика (MANUAL_KEYS) или характеристика (ключ 'char:Название')."""
     is_char = str(metric_key).startswith("char:")
-    if not is_char and metric_key not in MANUAL_KEYS:
+    if not is_char and metric_key not in OVERRIDABLE_KEYS:
         return False
     data = _load_overrides()
     nm_key = str(nm_id)

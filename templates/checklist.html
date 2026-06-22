@@ -257,24 +257,22 @@ function renderRows(){
       + `<td class="vc-col">${it.vendor_code||'—'}</td>`;
     const metricCells = META.map(m=>{
       const ok = it.metrics[m.key];
-      // кликабельны только настоящие ручные метрики (которые нельзя считать из WB);
-      // auto и parse определяются автоматически и доступны только для чтения
-      const editable = m.kind==='manual';
-      const cls = 'sq '+(ok?'g':'r')+(editable?' click':'');
+      // всё можно отмечать вручную (клик переключает и сохраняется), кроме «Баркод»
+      const editable = m.key!=='barcode';
+      const clk = editable?' click':'';
       const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
       // для метрики «Фото» показываем фактическое число фото внутри квадрата
       if(m.key==='photo10' && it.photo_count!=null){
-        const t = `${it.photo_count} фото в карточке`;
-        return `<td data-fval="${it.photo_count}"><span class="sq num ${ok?'g':'r'}" title="${t}">${it.photo_count}</span></td>`;
+        const t = `${it.photo_count} фото в карточке`+(editable?' · клик — переключить':'');
+        return `<td data-fval="${it.photo_count}"><span class="sq num ${ok?'g':'r'}${clk}" ${on} title="${t}">${it.photo_count}</span></td>`;
       }
-      // для метрики «Размерная сетка» показываем номер фото с сеткой;
-      // зелёный — если сетка на 4-м фото, красный — на любом другом
+      // для метрики «Размерная сетка» показываем номер фото с сеткой
       if(m.key==='grid_4th' && it.grid_index){
-        const good = it.grid_index===4;
-        const t = `Размерная сетка на фото №${it.grid_index}` + (good?'' : ' (ожидается 4-е)');
-        return `<td data-fval="${it.grid_index}"><span class="sq num ${good?'g':'r'}" title="${t}">${it.grid_index}</span></td>`;
+        const t = `Размерная сетка на фото №${it.grid_index}`+(editable?' · клик — переключить':'');
+        return `<td data-fval="${it.grid_index}"><span class="sq num ${ok?'g':'r'}${clk}" ${on} title="${t}">${it.grid_index}</span></td>`;
       }
       // в data-fval кладём текстовое значение, чтобы по нему работал фильтр (квадрат текста не содержит)
+      const cls = 'sq '+(ok?'g':'r')+clk;
       return `<td data-fval="${ok?'Да':'Нет'}"><span class="${cls}" ${on} title="${m.label}"></span></td>`;
     }).join('');
     const scoreCell = `<td class="sep" data-fval="${it.score}"><div class="score" style="color:${color(it.score)}">${it.score}%</div>
