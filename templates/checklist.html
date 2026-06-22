@@ -151,10 +151,7 @@
       <tbody id="rows"><tr><td class="empty" colspan="15">Загрузка…</td></tr></tbody>
     </table>
   </div>
-  <p class="legend"><b>✋ Эти колонки отмечаешь вручную</b> (кликом по клетке, отметка сохраняется):<br>
-     • <b>Закреп. отзывы</b>, <b>Блокировка акций</b> — по умолчанию красные, кликаешь те, где сделано → зелёные.<br>
-     • <b>Сертификаты</b> — по умолчанию зелёные, кликаешь те, где серта нет → красные.<br>
-     Остальные метрики (включая рекомендации и размерную сетку) считаются автоматически из данных Wildberries.</p>
+  <p class="legend"><b>✋ Все колонки с пометкой «вручную»</b> (всё, кроме «Баркод») можно отметить кликом по квадрату: красный ↔ зелёный, отметка <b>сохраняется</b>. Авто-значение из Wildberries остаётся базовым, ручная отметка его перебивает. <b>«Баркод»</b> — только автоматически.</p>
 
 <script>
 let META=[], DATA=null, onlyIssues=false, category='all', view='metrics', CHARCOLS=[];
@@ -212,7 +209,8 @@ function renderHead(){
   document.getElementById('sub').textContent =
     `Готовность карточек по артикулам — ${META.length} метрик + ${CHARCOLS.length} характеристик`;
   const metricCols = META.map(m=>{
-    const manual = m.kind==='manual'
+    // пометка «вручную» у всех кликабельных столбцов (кроме «Баркод»)
+    const manual = m.key!=='barcode'
       ? '<div style="font-size:10px;color:var(--orange);font-weight:700;margin-top:4px">✋ вручную</div>' : '';
     return `<th>${m.label.replace(/ /g,'<br>')}${manual}</th>`;
   }).join('');
