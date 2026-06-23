@@ -341,6 +341,55 @@ def employee_message(name, event, tasks):
     )
 
 
+def _tasks_lines(tasks):
+    """Список задач в виде строк '• Задача (до ДД.ММ)'."""
+    if not tasks:
+        return ["• активных задач в Битрикс не нашлось"]
+    out = []
+    for t in tasks:
+        d = _fmt_deadline(t.get("deadline"))
+        dl = f" ({d})" if d else ""
+        title_t = (t.get("title") or "").strip() or "Без названия"
+        out.append(f"• {title_t}{dl}")
+    return out
+
+
+def combined_employee_message(name, blocks, include_announce=False):
+    """Одно сообщение сотруднику по ВСЕМ его сегодняшним созвонам сразу.
+
+    blocks — список кортежей (event, tasks). Каждый созвон оформляется
+    отдельным блоком с заголовком-временем, разделённым пустой строкой.
+    """
+    greet = f"{name}, " if name else ""
+    parts = []
+
+    if include_announce:
+        parts.append(
+            f"📣 {greet}у нас новый формат созвонов!\n"
+            "Перед встречей я заранее присылаю список твоих задач из Битрикс. "
+            "Созвон по-новому: 1️⃣ сначала каждый проходит по своим задачам; "
+            "2️⃣ потом — всё остальное. Приходи подготовленным 🙌"
+        )
+
+    # сортируем созвоны по времени начала
+    blocks = sorted(blocks, key=lambda b: b[0].get("start") or _now_msk())
+    if len(blocks) == 1:
+        head = f"⏰ {greet}напоминание о сегодняшнем созвоне. Начни доклад со своих задач:"
+    else:
+        head = (f"⏰ {greet}напоминание: сегодня у тебя {len(blocks)} созвона. "
+                "По каждому — начни доклад со своих задач:")
+    parts.append(head)
+
+    for ev, tasks in blocks:
+        when = ev["start"].strftime("%H:%M") if ev.get("start") else ""
+        title = ev.get("name") or "Созвон"
+        block = [f"📅 {when} — «{title}»"] + _tasks_lines(tasks)
+        parts.append("\n".join(block))
+
+    parts.append("_Сообщение от JOTO — сформировано автоматически._")
+    return "\n\n".join(parts)
+
+
 # ===================== ХРАНИЛИЩЕ ОТПРАВЛЕННЫХ =====================
 
 def event_key(event):

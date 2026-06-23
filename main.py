@@ -5,7 +5,7 @@ import threading
 import schedule
 import time
 from flask import Flask, request, jsonify, render_template
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import checklist
 import vision
@@ -14,6 +14,29 @@ import vacations
 import meetings
 
 app = Flask(__name__)
+
+# Москва (UTC+3) — Railway работает в UTC
+MSK = timezone(timedelta(hours=3))
+
+# Лимит длины одного сообщения Битрикс (с запасом)
+BITRIX_MSG_LIMIT = int(os.environ.get("BITRIX_MSG_LIMIT", "15000"))
+
+
+def _split_for_bitrix(text, limit=None):
+    """Разбивает длинный текст на части по лимиту Битрикс, не разрывая строки."""
+    limit = limit or BITRIX_MSG_LIMIT
+    if len(text) <= limit:
+        return [text]
+    parts, cur = [], ""
+    for line in text.split("\n"):
+        if cur and len(cur) + len(line) + 1 > limit:
+            parts.append(cur)
+            cur = ""
+        cur = f"{cur}\n{line}" if cur else line
+    if cur:
+        parts.append(cur)
+    return parts
+
 
 WB_API_TOKEN = os.environ.get("WB_API_TOKEN", "").strip()
 
@@ -271,57 +294,89 @@ def get_advert_budget(advert_id):
         print(f"Ошибка WB Adv budget {advert_id}: {e}")
         return None
 
-def check_budgets():
-    print(f"Проверка бюджетов: {datetime.now()}")
-
-    if not WB_API_TOKEN or not B24_WEBHOOK:
-        print("Нет токенов")
-        return
-
-    if not TATIANA_USER_ID:
-        print("Не задан TATIANA_USER_ID — некуда слать уведомление о бюджете")
-        return
-
+def budget_block():
+    """Возвращает текст блока «низкий бюджет кампаний» или None."""
+    if not WB_API_TOKEN:
+        return None
     adverts = get_active_adverts()
     if not adverts:
-        print("Нет активных кампаний для проверки бюджета")
-        return
-
+        return None
     alerts = []
     for adv in adverts:
         budget = get_advert_budget(adv["id"])
         print(f"Кампания {adv['name']} (ID {adv['id']}): бюджет={budget} ₽")
         if budget is not None and budget < BUDGET_THRESHOLD:
             alerts.append(
-                f"🔴 Рекламная кампания «{adv['name']}» (ID {adv['id']}): "
-                f"остаток бюджета {budget} ₽ — срочное пополнение бюджета!"
+                f"🔴 «{adv['name']}» (ID {adv['id']}): остаток {budget} ₽ — "
+                "срочное пополнение!"
             )
         time.sleep(0.5)  # бережём лимиты WB API
+    if not alerts:
+        return None
+    return "💰 *Низкий бюджет рекламных кампаний WB:*\n" + "\n".join(alerts)
 
-    if alerts:
-        msg = "💰 *Низкий бюджет рекламных кампаний WB:*\n\n" + "\n".join(alerts)
-        send_b24_message(TATIANA_USER_ID, msg, from_bot=True)
-        print(f"Отправлено {len(alerts)} уведомлений Татьяне")
+
+def check_budgets():
+    """Real-time проверка бюджета — шлёт Татьяне отдельным сообщением при низком
+    остатке (срочно, не ждём утреннего дайджеста)."""
+    print(f"Проверка бюджетов: {datetime.now()}")
+    if not B24_WEBHOOK or not TATIANA_USER_ID:
+        print("Бюджет: нет вебхука или получателя")
+        return
+    block = budget_block()
+    if block:
+        send_b24_message(TATIANA_USER_ID, block, from_bot=True)
+        print("Бюджет: уведомление отправлено Татьяне")
     else:
         print(f"Кампаний с бюджетом ниже {BUDGET_THRESHOLD} ₽ не найдено")
 
+
+def send_daily_digest():
+    """ЕДИНЫЙ утренний дайджест Татьяне: все блоки (чек-лист, бюджет, ...) —
+    ОДНИМ сообщением через бота JOTO. Длинный текст бьём по лимиту Битрикс."""
+    print(f"Дайджест: сборка {datetime.now()}")
+    if not B24_WEBHOOK or not TATIANA_USER_ID:
+        print("Дайджест: нет вебхука или получателя")
+        return {"ok": False, "error": "no_webhook_or_recipient"}
+
+    # Бюджет рекламы НЕ включаем — он шлётся отдельно в реальном времени.
+    header = f"📊 *Сводка JOTO на {datetime.now(MSK).strftime('%d.%m.%Y')}*"
+    blocks = [header]
+    for builder in (lambda: checklist_block(force_compute=True),):
+        try:
+            b = builder()
+            if b:
+                blocks.append(b)
+        except Exception as e:
+            print(f"Дайджест: ошибка блока: {e}")
+
+    if len(blocks) == 1:
+        blocks.append("На сегодня заметных уведомлений нет ✅")
+
+    text = "\n\n".join(blocks)
+    parts = _split_for_bitrix(text)
+    sent = 0
+    for part in parts:
+        status, _ = send_b24_message(TATIANA_USER_ID, part, from_bot=True)
+        if status == 200:
+            sent += 1
+        time.sleep(0.3)
+    print(f"Дайджест: отправлено частей {sent}/{len(parts)}")
+    return {"ok": True, "parts": len(parts), "sent": sent}
+
 # ===================== ЧЕК-ЛИСТ КАРТОЧЕК =====================
 
-def notify_checklist(force_compute=False):
-    """Считает чек-лист и шлёт Татьяне сводку по готовности карточек."""
-    print(f"Чек-лист: уведомление {datetime.now()}")
+def checklist_block(force_compute=False):
+    """Возвращает текст блока «чек-лист карточек» для дайджеста или None."""
     if not WB_API_TOKEN:
-        print("Чек-лист: нет WB_API_TOKEN")
-        return
-
+        return None
     data = checklist.compute_checklist() if force_compute else checklist.get_cached()
     if not data.get("items"):
         data = checklist.compute_checklist()
     items = data.get("items") or []
     s = data.get("summary") or {}
     if not items:
-        print("Чек-лист: нет данных для уведомления")
-        return
+        return None
 
     worst = [i for i in items if i["score"] < 100][:10]
     lines = [
@@ -334,12 +389,21 @@ def notify_checklist(force_compute=False):
         lines.append("\nТоп артикулов с недочётами:")
         for i in worst:
             lines.append(f"🔴 {i['name']} (nm {i['nm_id']}) — {i['score']}%")
+    return "\n".join(lines)
 
+
+def notify_checklist(force_compute=False):
+    """Считает чек-лист и шлёт Татьяне сводку (отдельным сообщением)."""
+    print(f"Чек-лист: уведомление {datetime.now()}")
+    block = checklist_block(force_compute=force_compute)
+    if not block:
+        print("Чек-лист: нет данных для уведомления")
+        return
     if not B24_WEBHOOK:
         print("Чек-лист: нет B24_WEBHOOK — не шлём")
         return
-    send_b24_message(TATIANA_USER_ID, "\n".join(lines), from_bot=True)
-    print(f"Чек-лист: сводка отправлена Татьяне ({len(worst)} с недочётами)")
+    send_b24_message(TATIANA_USER_ID, block, from_bot=True)
+    print("Чек-лист: сводка отправлена Татьяне")
 
 
 # ===================== ГРАФИК ОТПУСКОВ =====================
@@ -462,56 +526,59 @@ def check_meetings(force=False, only_uid=None):
         return {"ok": True, "events": 0}
 
     notified = meetings.load_notified()
-    sent, meetings_done = 0, 0
-    announced_now = set()  # кому уже отправили объявление в этом запуске
 
+    # 1) Собираем созвоны, по которым сейчас пора напомнить
+    due_events = []
     for ev in events:
         remind_at = ev["start"] - timedelta(minutes=meetings.REMIND_BEFORE_MIN)
-        key = meetings.event_key(ev)
         due = force or (remind_at <= now < ev["start"])
         if not due:
             continue
-        if key in notified and not force:
+        if meetings.event_key(ev) in notified and not force:
             continue
+        due_events.append(ev)
 
+    if not due_events:
+        print("Созвоны: подходящих по времени созвонов сейчас нет")
+        return {"ok": True, "meetings": 0, "sent": 0}
+
+    # 2) Группируем по участнику: uid -> [события]
+    per_user = {}
+    for ev in due_events:
         targets = ev["attendee_ids"]
         if test_mode:
             targets = [u for u in targets if str(u) == str(only_uid)]
-            if not targets:
-                continue
-
-        names = meetings.get_user_names(targets)
         for uid in targets:
-            name = names.get(uid, "")
-            # Сначала — объявление о новом формате (сначала задачи, потом всё
-            # остальное). В боевом режиме шлём один раз на сотрудника; в тесте
-            # шлём всегда (для предпросмотра), но отметку не сохраняем.
-            ann_key = meetings.announced_key(uid)
-            if uid not in announced_now and (test_mode or ann_key not in notified):
-                a_status, _ = send_b24_message(
-                    uid, meetings.announce_message(name), from_bot=True)
-                if a_status == 200:
-                    announced_now.add(uid)
-                    if not test_mode:
-                        notified.add(ann_key)
-                time.sleep(0.3)
+            per_user.setdefault(uid, []).append(ev)
 
-            tasks = meetings.get_user_tasks(uid)
-            msg = meetings.employee_message(name, ev, tasks)
-            status, _ = send_b24_message(uid, msg, from_bot=True)
-            if status == 200:
-                sent += 1
-            time.sleep(0.3)  # бережём лимиты Битрикс
+    if not per_user:
+        return {"ok": True, "meetings": len(due_events), "sent": 0}
 
-        if not test_mode:
-            notified.add(key)
-            meetings.save_notified(notified)
-        meetings_done += 1
-        print(f"Созвоны: «{ev['name']}» в {ev['start'].strftime('%H:%M')} — "
-              f"напоминания {len(ev['attendee_ids'])} участникам")
+    names = meetings.get_user_names(list(per_user.keys()))
+    sent = 0
+    # 3) Каждому участнику — ОДНО сообщение: приветствие + все его созвоны + задачи
+    for uid, evs in per_user.items():
+        name = names.get(uid, "")
+        blocks = [(ev, meetings.get_user_tasks(uid)) for ev in evs]
+        ann_key = meetings.announced_key(uid)
+        include_announce = test_mode or (ann_key not in notified)
+        msg = meetings.combined_employee_message(name, blocks, include_announce)
+        status, _ = send_b24_message(uid, msg, from_bot=True)
+        if status == 200:
+            sent += 1
+            if not test_mode and include_announce:
+                notified.add(ann_key)
+        time.sleep(0.3)  # бережём лимиты Битрикс
 
-    print(f"Созвоны: обработано встреч {meetings_done}, отправлено напоминаний {sent}")
-    return {"ok": True, "meetings": meetings_done, "sent": sent}
+    # 4) Отмечаем созвоны как отправленные (чтобы не дублировать в течение дня)
+    if not test_mode:
+        for ev in due_events:
+            notified.add(meetings.event_key(ev))
+        meetings.save_notified(notified)
+
+    print(f"Созвоны: созвонов {len(due_events)}, участников {len(per_user)}, "
+          f"отправлено сообщений {sent}")
+    return {"ok": True, "meetings": len(due_events), "sent": sent}
 
 
 @app.route("/meetings/check-now", methods=["GET"])
@@ -732,6 +799,12 @@ def check_budget_now():
     threading.Thread(target=check_budgets).start()
     return jsonify({"ok": True, "message": "Проверка бюджетов запущена"})
 
+@app.route("/digest/send", methods=["GET"])
+def digest_send():
+    """Собрать и отправить единый дайджест Татьяне прямо сейчас."""
+    result = send_daily_digest()
+    return jsonify(result)
+
 @app.route("/test-relay", methods=["GET"])
 def test_relay():
     """Пробное сообщение через релей JOTO. /test-relay?dialog_id=226"""
@@ -818,8 +891,9 @@ def run_scheduler():
     schedule.every().day.at("06:00").do(check_ctr)
     # Проверка остатка бюджета кампаний каждые полчаса
     schedule.every(30).minutes.do(check_budgets)
-    # Сводка по чек-листу карточек — раз в день
-    schedule.every().day.at("07:00").do(notify_checklist)
+    # Единый утренний дайджест Татьяне (чек-лист и т.п.) — одним сообщением.
+    # Бюджет рекламы и CTR остаются отдельными real-time уведомлениями.
+    schedule.every().day.at("07:00").do(send_daily_digest)
     # Автоматический пересчёт чек-листа каждые N часов (по умолчанию 1 — раз в час)
     refresh_h = int(os.environ.get("CHECKLIST_REFRESH_HOURS", "1"))
     schedule.every(refresh_h).hours.do(checklist.compute_checklist)
