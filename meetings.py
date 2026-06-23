@@ -267,20 +267,36 @@ def get_user_tasks(uid):
     else:
         raw = []
 
-    tasks = []
-    for t in raw[:TASK_LIMIT]:
+    # Убираем дубли по названию (одна и та же задача может быть заведена
+    # несколько раз). Список отсортирован по дедлайну, поэтому оставляем
+    # первое вхождение — с самым ранним сроком.
+    tasks, seen = [], set()
+    for t in raw:
+        title = (t.get("title") or t.get("TITLE") or "").strip()
+        key = title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
         tasks.append({
             "id": t.get("id") or t.get("ID"),
-            "title": t.get("title") or t.get("TITLE"),
+            "title": title,
             "deadline": t.get("deadline") or t.get("DEADLINE"),
             "status": t.get("status") or t.get("STATUS"),
         })
+        if len(tasks) >= TASK_LIMIT:
+            break
     return tasks
 
 
 def _fmt_deadline(deadline):
+    """Строка дедлайна для сообщения: '(до 25.06)' или '(просрочено 20.06)'."""
     dt = _parse_dt(deadline)
-    return dt.strftime("%d.%m") if dt else ""
+    if not dt:
+        return ""
+    day = dt.strftime("%d.%m")
+    if dt.date() < _now_msk().date():
+        return f"просрочено {day}"
+    return f"до {day}"
 
 
 def announce_message(name):
@@ -313,7 +329,7 @@ def employee_message(name, event, tasks):
         lines = [f"{greet}подготовься к созвону. Начни доклад со своих задач:"]
         for t in tasks:
             d = _fmt_deadline(t.get("deadline"))
-            dl = f" (до {d})" if d else ""
+            dl = f" ({d})" if d else ""
             title_t = (t.get("title") or "").strip() or "Без названия"
             lines.append(f"• {title_t}{dl}")
         body = "\n".join(lines)
