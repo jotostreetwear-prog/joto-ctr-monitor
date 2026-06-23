@@ -90,9 +90,15 @@ NOTIFIED_PATH = (
 
 # ===================== БИТРИКС API =====================
 
+# Текст последней ошибки вызова Битрикс — чтобы показать её в /meetings/debug.
+_LAST_ERROR = None
+
+
 def _b24(method, payload=None, method_get=False):
     """Вызов REST-метода Битрикс через вебхук. Возвращает result или None."""
+    global _LAST_ERROR
     if not WEBHOOK:
+        _LAST_ERROR = "нет B24_WEBHOOK"
         print("Созвоны: нет B24_WEBHOOK")
         return None
     url = f"{WEBHOOK}/{method}.json"
@@ -102,16 +108,19 @@ def _b24(method, payload=None, method_get=False):
         else:
             resp = httpx.post(url, json=payload or {}, timeout=30)
         if resp.status_code != 200:
-            print(f"Созвоны: {method} HTTP {resp.status_code}: {resp.text[:200]}")
+            _LAST_ERROR = f"{method} HTTP {resp.status_code}: {resp.text[:200]}"
+            print(f"Созвоны: {_LAST_ERROR}")
             return None
         data = resp.json()
         if isinstance(data, dict) and data.get("error"):
-            print(f"Созвоны: {method} ошибка {data.get('error')}: "
-                  f"{data.get('error_description')}")
+            _LAST_ERROR = (f"{method}: {data.get('error')} — "
+                           f"{data.get('error_description')}")
+            print(f"Созвоны: {_LAST_ERROR}")
             return None
         return data.get("result") if isinstance(data, dict) else data
     except Exception as e:
-        print(f"Созвоны: {method} исключение {e}")
+        _LAST_ERROR = f"{method} исключение {e}"
+        print(f"Созвоны: {_LAST_ERROR}")
         return None
 
 
@@ -177,7 +186,7 @@ def fetch_raw_today():
 
     res = _b24("calendar.event.get", payload)
     if res is None:
-        return [], "calendar.event.get вернул ошибку или None (см. логи/права)"
+        return [], (_LAST_ERROR or "calendar.event.get вернул ошибку или None")
     if isinstance(res, dict):
         res = res.get("items") or res.get("events") or []
     return list(res or []), None
