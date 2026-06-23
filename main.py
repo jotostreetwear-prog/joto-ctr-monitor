@@ -34,30 +34,20 @@ def _normalize_webhook(url):
 
 B24_WEBHOOK = _normalize_webhook(os.environ.get("B24_WEBHOOK", ""))
 
-# Отдельный вебхук ДЛЯ ОТПРАВКИ сообщений (например, вебхук joto-agent), чтобы
-# напоминания приходили от его имени. Если не задан — шлём через B24_WEBHOOK.
-# Чтение календаря/задач всегда идёт через B24_WEBHOOK (у него есть права).
-B24_SEND_WEBHOOK = _normalize_webhook(
-    os.environ.get("B24_SEND_WEBHOOK", "")) or B24_WEBHOOK
-
 # ID пользователя Татьяны в Битрикс24 — для личных уведомлений о бюджете кампаний
 TATIANA_USER_ID = os.environ.get("TATIANA_USER_ID", "232").strip()
 # Порог остатка бюджета (₽), ниже которого шлём уведомление
 BUDGET_THRESHOLD = int(os.environ.get("BUDGET_THRESHOLD", "100"))
-# ID чат-бота в Битрикс24 — если задан, сообщения шлются от имени бота
-B24_BOT_ID = os.environ.get("B24_BOT_ID", "").strip()
 
-# Релей joto-agent: если задан JOTO_AGENT_RELAY_URL, сообщения отправляются
-# через сервис joto-agent (POST с токеном), и приходят ОТ ЕГО БОТА. Это
-# единственный способ слать именно от бота joto-agent (он зарегистрирован
-# через OAuth-приложение, недоступное нашему вебхуку).
+# Релей joto-agent — ЕДИНЫЙ канал отправки всех уведомлений: сообщения уходят
+# в Битрикс от имени бота JOTO. POST на JOTO_AGENT_RELAY_URL с токеном.
 JOTO_AGENT_RELAY_URL = os.environ.get("JOTO_AGENT_RELAY_URL", "").strip().rstrip("/")
 JOTO_AGENT_RELAY_TOKEN = os.environ.get("JOTO_AGENT_RELAY_TOKEN", "").strip()
 
 # ===================== БИТРИКС =====================
 
 def _send_via_relay(dialog_id, text):
-    """Отправка через релей joto-agent. Возвращает (status_code, тело)."""
+    """Отправка через релей joto-agent (от имени бота JOTO). (status, тело)."""
     try:
         resp = httpx.post(
             JOTO_AGENT_RELAY_URL,
@@ -65,35 +55,30 @@ def _send_via_relay(dialog_id, text):
             json={"dialog_id": str(dialog_id), "message": text},
             timeout=15,
         )
-        print(f"Релей joto-agent: {resp.status_code} {resp.text[:200]}")
+        print(f"Релей JOTO: {resp.status_code} {resp.text[:200]}")
         return resp.status_code, resp.text
     except Exception as e:
-        print(f"Ошибка релея joto-agent: {e}")
+        print(f"Ошибка релея JOTO: {e}")
         return None, str(e)
 
 
 def send_b24_message(dialog_id, text, from_bot=False):
-    """Отправляет сообщение в Битрикс. Возвращает (status_code, тело_ответа).
+    """Единая отправка всех уведомлений сервиса в Битрикс через бота JOTO.
 
-    Приоритет отправки:
-      1) релей joto-agent (JOTO_AGENT_RELAY_URL) — приходит от бота joto-agent;
-      2) от имени бота через imbot.message.add (если задан B24_BOT_ID);
-      3) от имени владельца вебхука через im.message.add.
+    Все сообщения (checklist, vacations, competitors, meetings, бюджет и пр.)
+    уходят через релей joto-agent (JOTO_AGENT_RELAY_URL). Аргумент from_bot
+    оставлен для совместимости со старыми вызовами и ни на что не влияет.
 
-    Отправка по пп.2–3 идёт через B24_SEND_WEBHOOK (если задан). Чтение
-    календаря/задач при этом всегда остаётся на основном B24_WEBHOOK.
+    Если релей не настроен — запасной путь через im.message.add (B24_WEBHOOK),
+    чтобы сервис не падал в окружении без релея.
     """
-    if from_bot and JOTO_AGENT_RELAY_URL and JOTO_AGENT_RELAY_TOKEN:
+    if JOTO_AGENT_RELAY_URL and JOTO_AGENT_RELAY_TOKEN:
         return _send_via_relay(dialog_id, text)
     try:
-        if from_bot and B24_BOT_ID:
-            url = f"{B24_SEND_WEBHOOK}/imbot.message.add.json"
-            payload = {"BOT_ID": B24_BOT_ID, "DIALOG_ID": dialog_id, "MESSAGE": text}
-        else:
-            url = f"{B24_SEND_WEBHOOK}/im.message.add.json"
-            payload = {"DIALOG_ID": dialog_id, "MESSAGE": text}
+        url = f"{B24_WEBHOOK}/im.message.add.json"
+        payload = {"DIALOG_ID": dialog_id, "MESSAGE": text}
         resp = httpx.post(url, json=payload, timeout=10)
-        print(f"Ответ Битрикс: {resp.status_code} {resp.text[:200]}")
+        print(f"Ответ Битрикс (запасной путь): {resp.status_code} {resp.text[:200]}")
         return resp.status_code, resp.text
     except Exception as e:
         print(f"Ошибка отправки: {e}")
@@ -747,6 +732,25 @@ def check_budget_now():
     threading.Thread(target=check_budgets).start()
     return jsonify({"ok": True, "message": "Проверка бюджетов запущена"})
 
+@app.route("/test-relay", methods=["GET"])
+def test_relay():
+    """Пробное сообщение через релей JOTO. /test-relay?dialog_id=226"""
+    dialog_id = request.args.get("dialog_id", TATIANA_USER_ID)
+    status, body = send_b24_message(
+        dialog_id,
+        "✅ Тест отправки через бота JOTO. Если видишь это сообщение — "
+        "релей работает, уведомления идут от бота JOTO.",
+        from_bot=True,
+    )
+    return jsonify({
+        "ok": status == 200,
+        "dialog_id": dialog_id,
+        "relay_url": JOTO_AGENT_RELAY_URL or "(не задан)",
+        "relay_configured": bool(JOTO_AGENT_RELAY_URL and JOTO_AGENT_RELAY_TOKEN),
+        "bitrix_status": status,
+        "bitrix_response": body,
+    })
+
 @app.route("/test-budget-notify", methods=["GET"])
 def test_budget_notify():
     # DIALOG_ID можно переопределить в URL: /test-budget-notify?to=232
@@ -761,7 +765,7 @@ def test_budget_notify():
     return jsonify({
         "ok": status == 200,
         "dialog_id": dialog_id,
-        "from_bot": bool(B24_BOT_ID),
+        "via_relay": bool(JOTO_AGENT_RELAY_URL),
         "bitrix_status": status,
         "bitrix_response": body,
     })
@@ -773,40 +777,8 @@ def register_bot():
         "ok": status == 200,
         "bitrix_status": status,
         "bitrix_response": body,
-        "hint": "Возьмите число из поля result и пропишите его в переменную окружения B24_BOT_ID на Railway",
+        "hint": "Устаревшее: отправка идёт через релей JOTO (JOTO_AGENT_RELAY_URL)",
     })
-
-@app.route("/bots", methods=["GET"])
-def list_bots():
-    """Список зарегистрированных чат-ботов (id + название) — чтобы найти,
-    какой BOT_ID прописать в B24_BOT_ID. Смотрим через вебхук отправки
-    (B24_SEND_WEBHOOK — напр. вебхук joto-agent), т.к. бот живёт там."""
-    out = {
-        "current_bot_id": B24_BOT_ID or "(не задан)",
-        "send_webhook_set": bool(B24_SEND_WEBHOOK),
-        "bots": [],
-    }
-    try:
-        r = httpx.get(f"{B24_SEND_WEBHOOK}/imbot.bot.list.json", timeout=10)
-        data = r.json()
-        result = data.get("result", data)
-        # result может быть dict {id: {...}} или list
-        items = result.items() if isinstance(result, dict) else [
-            (None, b) for b in (result or [])]
-        for key, b in items:
-            if not isinstance(b, dict):
-                continue
-            props = b.get("PROPERTIES") or b.get("properties") or {}
-            out["bots"].append({
-                "id": b.get("ID") or b.get("id") or b.get("BOT_ID") or key,
-                "name": props.get("NAME") or b.get("NAME") or b.get("name"),
-                "code": b.get("CODE") or b.get("code"),
-            })
-        if not out["bots"]:
-            out["raw"] = data
-    except Exception as e:
-        out["error"] = str(e)
-    return jsonify(out)
 
 @app.route("/debug-bitrix", methods=["GET"])
 def debug_bitrix():
@@ -818,7 +790,11 @@ def debug_bitrix():
         parts[-1] = "***токен***"
         masked = "/".join(parts)
 
-    out = {"webhook_url": masked, "bot_id_env": B24_BOT_ID or "(не задан)"}
+    out = {
+        "webhook_url": masked,
+        "relay_configured": bool(JOTO_AGENT_RELAY_URL and JOTO_AGENT_RELAY_TOKEN),
+        "relay_url": JOTO_AGENT_RELAY_URL or "(не задан)",
+    }
 
     # profile — чей это аккаунт
     try:
