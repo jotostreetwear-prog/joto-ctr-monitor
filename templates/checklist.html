@@ -155,6 +155,8 @@
 
 <script>
 let META=[], DATA=null, onlyIssues=false, category='all', view='metrics', CHARCOLS=[];
+// метрики только для авто-определения (не кликаются, без пометки «вручную»)
+const AUTO_ONLY = ['rating','seo'];
 
 const embedded = window.self !== window.top;  // открыто внутри Битрикс24
 
@@ -209,8 +211,8 @@ function renderHead(){
   document.getElementById('sub').textContent =
     `Готовность карточек по артикулам — ${META.length} метрик + ${CHARCOLS.length} характеристик`;
   const metricCols = META.map(m=>{
-    // пометка «вручную» у всех кликабельных столбцов (кроме «Баркод»)
-    const manual = m.key!=='barcode'
+    // пометка «вручную» у кликабельных столбцов (кроме авто: Баркод, Рейтинг, СЕО)
+    const manual = !AUTO_ONLY.includes(m.key)
       ? '<div style="font-size:10px;color:var(--orange);font-weight:700;margin-top:4px">✋ вручную</div>' : '';
     return `<th>${m.label.replace(/ /g,'<br>')}${manual}</th>`;
   }).join('');
@@ -255,8 +257,8 @@ function renderRows(){
       + `<td class="vc-col">${it.vendor_code||'—'}</td>`;
     const metricCells = META.map(m=>{
       const ok = it.metrics[m.key];
-      // всё можно отмечать вручную (клик переключает и сохраняется), кроме «Баркод»
-      const editable = m.key!=='barcode';
+      // всё можно отмечать вручную (клик переключает и сохраняется), кроме авто: Баркод, Рейтинг, СЕО
+      const editable = !AUTO_ONLY.includes(m.key);
       const clk = editable?' click':'';
       const on = editable?`onclick="toggle('${it.nm_id}','${m.key}',${!ok})"`:'';
       // для метрики «Фото» показываем фактическое число фото внутри квадрата
