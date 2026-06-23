@@ -47,18 +47,44 @@ BUDGET_THRESHOLD = int(os.environ.get("BUDGET_THRESHOLD", "100"))
 # ID чат-бота в Битрикс24 — если задан, сообщения шлются от имени бота
 B24_BOT_ID = os.environ.get("B24_BOT_ID", "").strip()
 
+# Релей joto-agent: если задан JOTO_AGENT_RELAY_URL, сообщения отправляются
+# через сервис joto-agent (POST с токеном), и приходят ОТ ЕГО БОТА. Это
+# единственный способ слать именно от бота joto-agent (он зарегистрирован
+# через OAuth-приложение, недоступное нашему вебхуку).
+JOTO_AGENT_RELAY_URL = os.environ.get("JOTO_AGENT_RELAY_URL", "").strip().rstrip("/")
+JOTO_AGENT_RELAY_TOKEN = os.environ.get("JOTO_AGENT_RELAY_TOKEN", "").strip()
+
 # ===================== БИТРИКС =====================
+
+def _send_via_relay(dialog_id, text):
+    """Отправка через релей joto-agent. Возвращает (status_code, тело)."""
+    try:
+        resp = httpx.post(
+            JOTO_AGENT_RELAY_URL,
+            headers={"Authorization": f"Bearer {JOTO_AGENT_RELAY_TOKEN}"},
+            json={"dialog_id": str(dialog_id), "message": text},
+            timeout=15,
+        )
+        print(f"Релей joto-agent: {resp.status_code} {resp.text[:200]}")
+        return resp.status_code, resp.text
+    except Exception as e:
+        print(f"Ошибка релея joto-agent: {e}")
+        return None, str(e)
+
 
 def send_b24_message(dialog_id, text, from_bot=False):
     """Отправляет сообщение в Битрикс. Возвращает (status_code, тело_ответа).
 
-    from_bot=True и заданный B24_BOT_ID — сообщение уходит от имени бота
-    (imbot.message.add), иначе от имени владельца вебхука (im.message.add).
+    Приоритет отправки:
+      1) релей joto-agent (JOTO_AGENT_RELAY_URL) — приходит от бота joto-agent;
+      2) от имени бота через imbot.message.add (если задан B24_BOT_ID);
+      3) от имени владельца вебхука через im.message.add.
 
-    Отправка идёт через B24_SEND_WEBHOOK (если задан — напр. вебхук joto-agent),
-    поэтому сообщение приходит от его имени. Чтение календаря/задач при этом
-    остаётся на основном B24_WEBHOOK.
+    Отправка по пп.2–3 идёт через B24_SEND_WEBHOOK (если задан). Чтение
+    календаря/задач при этом всегда остаётся на основном B24_WEBHOOK.
     """
+    if from_bot and JOTO_AGENT_RELAY_URL and JOTO_AGENT_RELAY_TOKEN:
+        return _send_via_relay(dialog_id, text)
     try:
         if from_bot and B24_BOT_ID:
             url = f"{B24_SEND_WEBHOOK}/imbot.message.add.json"
