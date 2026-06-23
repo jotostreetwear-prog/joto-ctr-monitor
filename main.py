@@ -753,20 +753,26 @@ def register_bot():
 @app.route("/bots", methods=["GET"])
 def list_bots():
     """Список зарегистрированных чат-ботов (id + название) — чтобы найти,
-    какой BOT_ID прописать в B24_BOT_ID."""
-    out = {"current_bot_id": B24_BOT_ID or "(не задан)", "bots": []}
+    какой BOT_ID прописать в B24_BOT_ID. Смотрим через вебхук отправки
+    (B24_SEND_WEBHOOK — напр. вебхук joto-agent), т.к. бот живёт там."""
+    out = {
+        "current_bot_id": B24_BOT_ID or "(не задан)",
+        "send_webhook_set": bool(B24_SEND_WEBHOOK),
+        "bots": [],
+    }
     try:
-        r = httpx.get(f"{B24_WEBHOOK}/imbot.bot.list.json", timeout=10)
+        r = httpx.get(f"{B24_SEND_WEBHOOK}/imbot.bot.list.json", timeout=10)
         data = r.json()
         result = data.get("result", data)
         # result может быть dict {id: {...}} или list
-        items = result.values() if isinstance(result, dict) else (result or [])
-        for b in items:
+        items = result.items() if isinstance(result, dict) else [
+            (None, b) for b in (result or [])]
+        for key, b in items:
             if not isinstance(b, dict):
                 continue
             props = b.get("PROPERTIES") or b.get("properties") or {}
             out["bots"].append({
-                "id": b.get("ID") or b.get("id") or b.get("BOT_ID"),
+                "id": b.get("ID") or b.get("id") or b.get("BOT_ID") or key,
                 "name": props.get("NAME") or b.get("NAME") or b.get("name"),
                 "code": b.get("CODE") or b.get("code"),
             })
