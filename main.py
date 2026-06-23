@@ -11,6 +11,7 @@ import checklist
 import vision
 import competitors
 import vacations
+import meetings
 
 app = Flask(__name__)
 
@@ -407,6 +408,86 @@ def check_vacations(send_seed=False, force=None):
         send_b24_message(VACATIONS_SUMMARY_TO, "\n".join(lines), from_bot=True)
 
 
+# ===================== НАПОМИНАНИЯ ПЕРЕД СОЗВОНОМ =====================
+
+def check_meetings(force=False):
+    """Шлёт участникам созвона их задачи перед началом встречи.
+
+    Событие и состав участников берутся из календаря Битрикс24, задачи —
+    из Битрикс по ответственному. Напоминание уходит за
+    MEETING_REMIND_BEFORE_MIN минут до начала (force=True — сразу, для теста).
+    """
+    print(f"Созвоны: проверка {datetime.now()}")
+
+    if not B24_WEBHOOK:
+        print("Созвоны: нет B24_WEBHOOK — некуда слать")
+        return {"ok": False, "error": "no_webhook"}
+
+    now = meetings._now_msk()
+    if meetings.WEEKDAYS_ONLY and now.weekday() >= 5 and not force:
+        print("Созвоны: выходной — пропуск")
+        return {"ok": True, "skipped": "weekend"}
+
+    events = meetings.fetch_today_events()
+    if not events:
+        print("Созвоны: подходящих событий на сегодня нет")
+        return {"ok": True, "events": 0}
+
+    notified = meetings.load_notified()
+    sent, meetings_done = 0, 0
+
+    for ev in events:
+        remind_at = ev["start"] - timedelta(minutes=meetings.REMIND_BEFORE_MIN)
+        key = meetings.event_key(ev)
+        due = force or (remind_at <= now < ev["start"])
+        if not due:
+            continue
+        if key in notified and not force:
+            continue
+
+        names = meetings.get_user_names(ev["attendee_ids"])
+        for uid in ev["attendee_ids"]:
+            name = names.get(uid, "")
+            # Однократное объявление о новом формате — перед первым напоминанием
+            ann_key = meetings.announced_key(uid)
+            if ann_key not in notified:
+                a_status, _ = send_b24_message(
+                    uid, meetings.announce_message(name), from_bot=True)
+                if a_status == 200:
+                    notified.add(ann_key)
+                time.sleep(0.3)
+
+            tasks = meetings.get_user_tasks(uid)
+            msg = meetings.employee_message(name, ev, tasks)
+            status, _ = send_b24_message(uid, msg, from_bot=True)
+            if status == 200:
+                sent += 1
+            time.sleep(0.3)  # бережём лимиты Битрикс
+
+        notified.add(key)
+        meetings.save_notified(notified)
+        meetings_done += 1
+        print(f"Созвоны: «{ev['name']}» в {ev['start'].strftime('%H:%M')} — "
+              f"напоминания {len(ev['attendee_ids'])} участникам")
+
+    print(f"Созвоны: обработано встреч {meetings_done}, отправлено напоминаний {sent}")
+    return {"ok": True, "meetings": meetings_done, "sent": sent}
+
+
+@app.route("/meetings/check-now", methods=["GET"])
+def meetings_check_now():
+    # /meetings/check-now?force=1 — разослать сразу, игнорируя время и дубли
+    force = request.args.get("force") in ("1", "true", "yes")
+    threading.Thread(target=check_meetings, kwargs={"force": force}, daemon=True).start()
+    return jsonify({"ok": True, "message": "Проверка созвонов запущена", "force": force})
+
+
+@app.route("/meetings/debug", methods=["GET"])
+def meetings_debug():
+    """Что бот видит в календаре и какие задачи у участников."""
+    return jsonify(meetings.debug())
+
+
 @app.route("/vacations", methods=["GET", "POST"])
 def vacations_page():
     return render_template("vacations.html")
@@ -572,7 +653,8 @@ def index():
         "JOTO CTR Monitor работает ✓<br>"
         "Чек-лист карточек: <a href='/checklist'>/checklist</a><br>"
         "График отпусков: <a href='/vacations'>/vacations</a><br>"
-        "Анализ конкурентов: <a href='/competitors'>/competitors</a>"
+        "Анализ конкурентов: <a href='/competitors'>/competitors</a><br>"
+        "Созвоны (диагностика): <a href='/meetings/debug'>/meetings/debug</a>"
     )
 
 @app.route("/test-notify", methods=["GET"])
@@ -670,9 +752,13 @@ def run_scheduler():
     # Проверка графика отпусков — каждые N минут (по умолчанию 15)
     vac_min = int(os.environ.get("VACATIONS_CHECK_MINUTES", "15"))
     schedule.every(vac_min).minutes.do(check_vacations)
+    # Напоминания о задачах перед созвоном — частый опрос календаря, чтобы
+    # поймать момент «за N минут до начала» (по умолчанию каждые 5 минут)
+    meet_min = int(os.environ.get("MEETING_CHECK_MINUTES", "5"))
+    schedule.every(meet_min).minutes.do(check_meetings)
     print(f"Планировщик запущен — CTR в 09:00 МСК, бюджет каждые 30 мин, "
           f"чек-лист: сводка в 10:00 МСК, авто-пересчёт каждые {refresh_h} ч, "
-          f"отпуска каждые {vac_min} мин")
+          f"отпуска каждые {vac_min} мин, созвоны каждые {meet_min} мин")
     while True:
         schedule.run_pending()
         time.sleep(60)
