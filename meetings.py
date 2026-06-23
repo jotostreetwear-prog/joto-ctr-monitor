@@ -202,27 +202,25 @@ def fetch_today_events():
 
     today = _now_msk().date()
 
-    def _to_today(dt):
-        # Битрикс для повторяющихся событий отдаёт дату ПЕРВОГО случая серии,
-        # а не сегодняшнего. Раз событие пришло на запрос «сегодня», подставляем
-        # сегодняшнюю дату, сохраняя время суток.
-        if not dt:
-            return None
-        return dt.replace(year=today.year, month=today.month, day=today.day)
-
     events = []
     for e in res or []:
-        start = _to_today(_parse_dt(e.get("DATE_FROM") or e.get("dateFrom")))
+        start = _parse_dt(e.get("DATE_FROM") or e.get("dateFrom"))
         if not start:
             continue
         name = e.get("NAME") or e.get("name") or "Созвон"
         if not _name_matches(name):
             continue
+        # Берём только события, реально проходящие СЕГОДНЯ. Битрикс на запрос
+        # «события на сегодня» возвращает и повторяющиеся события, которые
+        # сегодня не идут (с датой ближайшего случая, напр. вчера). Настоящие
+        # сегодняшние приходят с датой начала = сегодня — по ней и фильтруем.
+        if start.date() != today:
+            continue
         events.append({
             "id": str(e.get("ID") or e.get("id") or ""),
             "name": name,
             "start": start,
-            "end": _to_today(_parse_dt(e.get("DATE_TO") or e.get("dateTo"))),
+            "end": _parse_dt(e.get("DATE_TO") or e.get("dateTo")),
             "attendee_ids": _attendee_ids(e),
         })
     events.sort(key=lambda x: x["start"])
@@ -392,11 +390,17 @@ def debug():
             "weekdays_only": WEEKDAYS_ONLY,
             "webhook_set": bool(WEBHOOK),
         },
-        # Сырой список ВСЕХ событий на сегодня (без фильтра по названию) —
-        # чтобы понять, читается ли календарь и как называются события.
+        # Сырой список ВСЕХ событий, что вернул Битрикс (включая повторяющиеся,
+        # которые сегодня не идут) — с датой начала. Сегодняшние имеют дату =
+        # сегодня, остальные отфильтровываются.
         "raw_today_count": len(raw),
         "raw_today_names": [
-            (e.get("NAME") or e.get("name") or "?") for e in raw
+            "{} — {}".format(
+                e.get("NAME") or e.get("name") or "?",
+                (_parse_dt(e.get("DATE_FROM") or e.get("dateFrom")) or now)
+                .strftime("%Y-%m-%d %H:%M"),
+            )
+            for e in raw
         ],
         "raw_error": raw_err,
         "events": [],
