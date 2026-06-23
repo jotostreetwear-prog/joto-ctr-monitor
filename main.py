@@ -410,14 +410,21 @@ def check_vacations(send_seed=False, force=None):
 
 # ===================== НАПОМИНАНИЯ ПЕРЕД СОЗВОНОМ =====================
 
-def check_meetings(force=False):
+def check_meetings(force=False, only_uid=None):
     """Шлёт участникам созвона их задачи перед началом встречи.
 
     Событие и состав участников берутся из календаря Битрикс24, задачи —
     из Битрикс по ответственному. Напоминание уходит за
     MEETING_REMIND_BEFORE_MIN минут до начала (force=True — сразу, для теста).
+
+    only_uid — если задан, рассылка идёт ТОЛЬКО этому сотруднику (тест-режим:
+    не спамим всю команду, не сохраняем отметки об отправке).
     """
-    print(f"Созвоны: проверка {datetime.now()}")
+    print(f"Созвоны: проверка {datetime.now()}"
+          + (f" (тест только для {only_uid})" if only_uid else ""))
+    test_mode = only_uid is not None
+    if test_mode:
+        force = True
 
     if not B24_WEBHOOK:
         print("Созвоны: нет B24_WEBHOOK — некуда слать")
@@ -445,12 +452,19 @@ def check_meetings(force=False):
         if key in notified and not force:
             continue
 
-        names = meetings.get_user_names(ev["attendee_ids"])
-        for uid in ev["attendee_ids"]:
+        targets = ev["attendee_ids"]
+        if test_mode:
+            targets = [u for u in targets if str(u) == str(only_uid)]
+            if not targets:
+                continue
+
+        names = meetings.get_user_names(targets)
+        for uid in targets:
             name = names.get(uid, "")
-            # Однократное объявление о новом формате — перед первым напоминанием
+            # Однократное объявление о новом формате — перед первым напоминанием.
+            # В тест-режиме объявление пропускаем (это лишь проверка вида сообщения).
             ann_key = meetings.announced_key(uid)
-            if ann_key not in notified:
+            if not test_mode and ann_key not in notified:
                 a_status, _ = send_b24_message(
                     uid, meetings.announce_message(name), from_bot=True)
                 if a_status == 200:
@@ -464,8 +478,9 @@ def check_meetings(force=False):
                 sent += 1
             time.sleep(0.3)  # бережём лимиты Битрикс
 
-        notified.add(key)
-        meetings.save_notified(notified)
+        if not test_mode:
+            notified.add(key)
+            meetings.save_notified(notified)
         meetings_done += 1
         print(f"Созвоны: «{ev['name']}» в {ev['start'].strftime('%H:%M')} — "
               f"напоминания {len(ev['attendee_ids'])} участникам")
@@ -476,10 +491,21 @@ def check_meetings(force=False):
 
 @app.route("/meetings/check-now", methods=["GET"])
 def meetings_check_now():
-    # /meetings/check-now?force=1 — разослать сразу, игнорируя время и дубли
+    # /meetings/check-now?force=1 — разослать сразу всем, игнорируя время и дубли
+    # /meetings/check-now?test=226 — БЕЗОПАСНЫЙ тест: отправить только сотруднику 226
     force = request.args.get("force") in ("1", "true", "yes")
-    threading.Thread(target=check_meetings, kwargs={"force": force}, daemon=True).start()
-    return jsonify({"ok": True, "message": "Проверка созвонов запущена", "force": force})
+    only_uid = request.args.get("test") or None
+    threading.Thread(
+        target=check_meetings,
+        kwargs={"force": force, "only_uid": only_uid},
+        daemon=True,
+    ).start()
+    return jsonify({
+        "ok": True,
+        "message": "Проверка созвонов запущена",
+        "force": force,
+        "test_only_uid": only_uid,
+    })
 
 
 @app.route("/meetings/debug", methods=["GET"])
