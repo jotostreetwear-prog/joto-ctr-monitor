@@ -200,9 +200,19 @@ def fetch_today_events():
     """
     res, _err = fetch_raw_today()
 
+    today = _now_msk().date()
+
+    def _to_today(dt):
+        # Битрикс для повторяющихся событий отдаёт дату ПЕРВОГО случая серии,
+        # а не сегодняшнего. Раз событие пришло на запрос «сегодня», подставляем
+        # сегодняшнюю дату, сохраняя время суток.
+        if not dt:
+            return None
+        return dt.replace(year=today.year, month=today.month, day=today.day)
+
     events = []
     for e in res or []:
-        start = _parse_dt(e.get("DATE_FROM") or e.get("dateFrom"))
+        start = _to_today(_parse_dt(e.get("DATE_FROM") or e.get("dateFrom")))
         if not start:
             continue
         name = e.get("NAME") or e.get("name") or "Созвон"
@@ -212,7 +222,7 @@ def fetch_today_events():
             "id": str(e.get("ID") or e.get("id") or ""),
             "name": name,
             "start": start,
-            "end": _parse_dt(e.get("DATE_TO") or e.get("dateTo")),
+            "end": _to_today(_parse_dt(e.get("DATE_TO") or e.get("dateTo"))),
             "attendee_ids": _attendee_ids(e),
         })
     events.sort(key=lambda x: x["start"])
