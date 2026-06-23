@@ -163,11 +163,11 @@ def _attendee_ids(event):
     return out
 
 
-def fetch_today_events():
-    """События-созвоны на сегодня. Возвращает список dict:
+def fetch_raw_today():
+    """Сырой список всех событий календаря на сегодня (без фильтра по названию).
 
-        {id, name, start(datetime МСК), end, attendee_ids:[...]}
-    отсортированный по времени начала.
+    Возвращает (raw_events, error) — raw_events это список dict из Битрикс,
+    error — строка с описанием проблемы или None.
     """
     today = _now_msk().strftime("%Y-%m-%d")
     payload = {"type": CALENDAR_TYPE, "ownerId": CALENDAR_OWNER,
@@ -177,9 +177,19 @@ def fetch_today_events():
 
     res = _b24("calendar.event.get", payload)
     if res is None:
-        return []
+        return [], "calendar.event.get вернул ошибку или None (см. логи/права)"
     if isinstance(res, dict):
         res = res.get("items") or res.get("events") or []
+    return list(res or []), None
+
+
+def fetch_today_events():
+    """События-созвоны на сегодня. Возвращает список dict:
+
+        {id, name, start(datetime МСК), end, attendee_ids:[...]}
+    отсортированный по времени начала.
+    """
+    res, _err = fetch_raw_today()
 
     events = []
     for e in res or []:
@@ -334,6 +344,7 @@ def save_notified(keys):
 def debug():
     """Что бот видит в календаре и какие задачи у участников — для проверки."""
     now = _now_msk()
+    raw, raw_err = fetch_raw_today()
     events = fetch_today_events()
     out = {
         "now_msk": now.strftime("%Y-%m-%d %H:%M"),
@@ -346,6 +357,13 @@ def debug():
             "weekdays_only": WEEKDAYS_ONLY,
             "webhook_set": bool(WEBHOOK),
         },
+        # Сырой список ВСЕХ событий на сегодня (без фильтра по названию) —
+        # чтобы понять, читается ли календарь и как называются события.
+        "raw_today_count": len(raw),
+        "raw_today_names": [
+            (e.get("NAME") or e.get("name") or "?") for e in raw
+        ],
+        "raw_error": raw_err,
         "events": [],
     }
     notified = load_notified()
