@@ -740,6 +740,32 @@ def register_bot():
         "hint": "Возьмите число из поля result и пропишите его в переменную окружения B24_BOT_ID на Railway",
     })
 
+@app.route("/bots", methods=["GET"])
+def list_bots():
+    """Список зарегистрированных чат-ботов (id + название) — чтобы найти,
+    какой BOT_ID прописать в B24_BOT_ID."""
+    out = {"current_bot_id": B24_BOT_ID or "(не задан)", "bots": []}
+    try:
+        r = httpx.get(f"{B24_WEBHOOK}/imbot.bot.list.json", timeout=10)
+        data = r.json()
+        result = data.get("result", data)
+        # result может быть dict {id: {...}} или list
+        items = result.values() if isinstance(result, dict) else (result or [])
+        for b in items:
+            if not isinstance(b, dict):
+                continue
+            props = b.get("PROPERTIES") or b.get("properties") or {}
+            out["bots"].append({
+                "id": b.get("ID") or b.get("id") or b.get("BOT_ID"),
+                "name": props.get("NAME") or b.get("NAME") or b.get("name"),
+                "code": b.get("CODE") or b.get("code"),
+            })
+        if not out["bots"]:
+            out["raw"] = data
+    except Exception as e:
+        out["error"] = str(e)
+    return jsonify(out)
+
 @app.route("/debug-bitrix", methods=["GET"])
 def debug_bitrix():
     """Диагностика: какой вебхук используется, чей аккаунт и какие у него права."""
