@@ -442,6 +442,7 @@ def check_meetings(force=False, only_uid=None):
 
     notified = meetings.load_notified()
     sent, meetings_done = 0, 0
+    announced_now = set()  # кому уже отправили объявление в этом запуске
 
     for ev in events:
         remind_at = ev["start"] - timedelta(minutes=meetings.REMIND_BEFORE_MIN)
@@ -461,14 +462,17 @@ def check_meetings(force=False, only_uid=None):
         names = meetings.get_user_names(targets)
         for uid in targets:
             name = names.get(uid, "")
-            # Однократное объявление о новом формате — перед первым напоминанием.
-            # В тест-режиме объявление пропускаем (это лишь проверка вида сообщения).
+            # Сначала — объявление о новом формате (сначала задачи, потом всё
+            # остальное). В боевом режиме шлём один раз на сотрудника; в тесте
+            # шлём всегда (для предпросмотра), но отметку не сохраняем.
             ann_key = meetings.announced_key(uid)
-            if not test_mode and ann_key not in notified:
+            if uid not in announced_now and (test_mode or ann_key not in notified):
                 a_status, _ = send_b24_message(
                     uid, meetings.announce_message(name), from_bot=True)
                 if a_status == 200:
-                    notified.add(ann_key)
+                    announced_now.add(uid)
+                    if not test_mode:
+                        notified.add(ann_key)
                 time.sleep(0.3)
 
             tasks = meetings.get_user_tasks(uid)
