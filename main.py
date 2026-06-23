@@ -34,6 +34,12 @@ def _normalize_webhook(url):
 
 B24_WEBHOOK = _normalize_webhook(os.environ.get("B24_WEBHOOK", ""))
 
+# Отдельный вебхук ДЛЯ ОТПРАВКИ сообщений (например, вебхук joto-agent), чтобы
+# напоминания приходили от его имени. Если не задан — шлём через B24_WEBHOOK.
+# Чтение календаря/задач всегда идёт через B24_WEBHOOK (у него есть права).
+B24_SEND_WEBHOOK = _normalize_webhook(
+    os.environ.get("B24_SEND_WEBHOOK", "")) or B24_WEBHOOK
+
 # ID пользователя Татьяны в Битрикс24 — для личных уведомлений о бюджете кампаний
 TATIANA_USER_ID = os.environ.get("TATIANA_USER_ID", "232").strip()
 # Порог остатка бюджета (₽), ниже которого шлём уведомление
@@ -48,13 +54,17 @@ def send_b24_message(dialog_id, text, from_bot=False):
 
     from_bot=True и заданный B24_BOT_ID — сообщение уходит от имени бота
     (imbot.message.add), иначе от имени владельца вебхука (im.message.add).
+
+    Отправка идёт через B24_SEND_WEBHOOK (если задан — напр. вебхук joto-agent),
+    поэтому сообщение приходит от его имени. Чтение календаря/задач при этом
+    остаётся на основном B24_WEBHOOK.
     """
     try:
         if from_bot and B24_BOT_ID:
-            url = f"{B24_WEBHOOK}/imbot.message.add.json"
+            url = f"{B24_SEND_WEBHOOK}/imbot.message.add.json"
             payload = {"BOT_ID": B24_BOT_ID, "DIALOG_ID": dialog_id, "MESSAGE": text}
         else:
-            url = f"{B24_WEBHOOK}/im.message.add.json"
+            url = f"{B24_SEND_WEBHOOK}/im.message.add.json"
             payload = {"DIALOG_ID": dialog_id, "MESSAGE": text}
         resp = httpx.post(url, json=payload, timeout=10)
         print(f"Ответ Битрикс: {resp.status_code} {resp.text[:200]}")
