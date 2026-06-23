@@ -542,42 +542,41 @@ def check_meetings(force=False, only_uid=None):
         print("Созвоны: подходящих по времени созвонов сейчас нет")
         return {"ok": True, "meetings": 0, "sent": 0}
 
-    # 2) Группируем по участнику: uid -> [события]
-    per_user = {}
+    # 2) По КАЖДОМУ созвону — отдельное сообщение каждому участнику (за 30 мин
+    #    до начала этого созвона). Приветствие добавляем только один раз на
+    #    человека (при самом первом напоминании), потом не повторяем.
+    sent = 0
+    announced_now = set()  # кому приветствие уже добавили в этом запуске
     for ev in due_events:
         targets = ev["attendee_ids"]
         if test_mode:
             targets = [u for u in targets if str(u) == str(only_uid)]
+        if not targets:
+            continue
+        names = meetings.get_user_names(targets)
         for uid in targets:
-            per_user.setdefault(uid, []).append(ev)
-
-    if not per_user:
-        return {"ok": True, "meetings": len(due_events), "sent": 0}
-
-    names = meetings.get_user_names(list(per_user.keys()))
-    sent = 0
-    # 3) Каждому участнику — ОДНО сообщение: приветствие + все его созвоны + задачи
-    for uid, evs in per_user.items():
-        name = names.get(uid, "")
-        blocks = [(ev, meetings.get_user_tasks(uid)) for ev in evs]
-        ann_key = meetings.announced_key(uid)
-        include_announce = test_mode or (ann_key not in notified)
-        msg = meetings.combined_employee_message(name, blocks, include_announce)
-        status, _ = send_b24_message(uid, msg, from_bot=True)
-        if status == 200:
-            sent += 1
-            if not test_mode and include_announce:
-                notified.add(ann_key)
-        time.sleep(0.3)  # бережём лимиты Битрикс
-
-    # 4) Отмечаем созвоны как отправленные (чтобы не дублировать в течение дня)
-    if not test_mode:
-        for ev in due_events:
+            name = names.get(uid, "")
+            tasks = meetings.get_user_tasks(uid)
+            ann_key = meetings.announced_key(uid)
+            include_announce = (uid not in announced_now and
+                                (test_mode or ann_key not in notified))
+            msg = meetings.combined_employee_message(
+                name, [(ev, tasks)], include_announce)
+            status, _ = send_b24_message(uid, msg, from_bot=True)
+            if status == 200:
+                sent += 1
+                if include_announce:
+                    announced_now.add(uid)
+                    if not test_mode:
+                        notified.add(ann_key)
+            time.sleep(0.3)  # бережём лимиты Битрикс
+        if not test_mode:
             notified.add(meetings.event_key(ev))
+
+    if not test_mode:
         meetings.save_notified(notified)
 
-    print(f"Созвоны: созвонов {len(due_events)}, участников {len(per_user)}, "
-          f"отправлено сообщений {sent}")
+    print(f"Созвоны: созвонов {len(due_events)}, отправлено сообщений {sent}")
     return {"ok": True, "meetings": len(due_events), "sent": sent}
 
 
