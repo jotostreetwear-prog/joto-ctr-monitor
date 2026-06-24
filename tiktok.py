@@ -297,6 +297,13 @@ def remove_from_queue(item_id):
     return True
 
 
+def clear_queue():
+    """Полностью очищает очередь (для уборки дублей/тестовых записей)."""
+    with _lock:
+        _write_json(QUEUE_FILE, [])
+    return True
+
+
 def _update_item(item_id, **fields):
     with _lock:
         queue = get_queue()

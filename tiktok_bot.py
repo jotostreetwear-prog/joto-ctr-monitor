@@ -101,6 +101,12 @@ def tiktok_queue_delete():
     return jsonify({"ok": True})
 
 
+@app.route("/tiktok/queue/clear", methods=["POST"])
+def tiktok_queue_clear():
+    tiktok.clear_queue()
+    return jsonify({"ok": True})
+
+
 @app.route("/tiktok/yandex/import", methods=["POST"])
 def tiktok_yandex_import():
     """Импортирует видео из публичной папки Яндекс.Диска в очередь по расписанию."""

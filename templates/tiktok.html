@@ -88,7 +88,10 @@
   <div class="panel">
     <div class="row" style="justify-content:space-between;margin-top:0">
       <h3 style="margin:0">Очередь</h3>
-      <button class="ghost" onclick="publishNow()">Опубликовать созревшие сейчас</button>
+      <div class="row" style="margin:0">
+        <button class="ghost" onclick="clearQueue()">Очистить очередь</button>
+        <button class="ghost" onclick="publishNow()">Опубликовать созревшие сейчас</button>
+      </div>
     </div>
     <table>
       <thead><tr><th>Время (UTC)</th><th>Видео</th><th>Подпись</th><th>Статус</th><th></th></tr></thead>
@@ -162,6 +165,11 @@ async function importYandex(){
   const d = await r.json();
   if(d.ok){ msg.textContent = 'Добавлено '+d.added+' из '+d.total+' видео ✓'; load(); }
   else { msg.textContent = d.error || 'Ошибка'; }
+}
+async function clearQueue(){
+  if(!confirm('Удалить ВСЕ записи из очереди? Это не трогает уже опубликованные ролики в TikTok.')) return;
+  await fetch('/tiktok/queue/clear',{method:'POST'});
+  load();
 }
 async function publishNow(){
   await fetch('/tiktok/publish-now',{method:'POST'});
