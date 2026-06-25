@@ -105,8 +105,9 @@ MANUAL_KEYS = [k for k, _, kind in METRICS if kind != "auto"]
 MANUAL_DEFAULTS = {"certificates": True}
 TOTAL_METRICS = len(METRICS)
 
-# Метрики только для авто-определения (нельзя отметить вручную): рейтинг и СЕО.
-AUTO_ONLY_KEYS = {"rating", "seo"}
+# Метрики только для авто-определения (нельзя отметить вручную):
+# рейтинг, СЕО и «Отметить товар» (тянутся из WB).
+AUTO_ONLY_KEYS = {"rating", "seo", "photo_tags"}
 # Метрики, которые можно отмечать/переопределять вручную — все, кроме авто-только.
 # Авто-значение остаётся базовым, ручная отметка его перебивает и сохраняется.
 OVERRIDABLE_KEYS = {k for k, _, _ in METRICS if k not in AUTO_ONLY_KEYS}
