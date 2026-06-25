@@ -6,101 +6,137 @@
 <title>Чек-лист карточек</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
+  /* ===== IndexoWB — Направление 1 (по дизайн-спеке) ===== */
+  @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Inter:wght@300..800&display=swap');
+  @font-face{
+    font-family:'WB Hauss VF';
+    src:url('https://static-basket-02.wbbasket.ru/vol20/portal-fonts/latest/assets/als-hauss-vf.b709e7bab16d4dd7d164.ttf') format('truetype-variations');
+    font-weight:1 850; font-style:normal; font-display:swap;
+  }
   :root{
-    --bg:#eef2f6; --card:#fff; --ink:#1f2733; --muted:#8a94a6;
-    --green:#22c55e; --red:#ef4444; --orange:#f97316; --line:#eef1f5;
+    /* типографика */
+    --sans:'WB Hauss VF','Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    --wbt-table-font:'Lato',arial,sans-serif;
+    /* поверхности */
+    --bg:#EEF1F6; --card:#FFFFFF; --card-2:#F7F9FC; --card-bd:#E6E9F0; --hairline:#EDEFF4;
+    --shadow:0 1px 3px rgba(16,24,40,.05),0 1px 2px rgba(16,24,40,.04);
+    --shadow-pop:0 12px 32px -10px rgba(16,24,40,.22),0 2px 8px rgba(16,24,40,.06);
+    /* текст */
+    --ink:#1A2233; --ink-2:#5B6478; --ink-3:#8A93A6; --label:#9AA3B5;
+    /* акценты */
+    --primary:#2F6BED; --primary-hover:#255CD6; --primary-soft:#E9EEFD; --primary-on-soft:#2F6BED;
+    --success:#22C55E; --warning:#F59E0B; --danger:#EF4444; --blue:#1D4FBF;
+    /* таблицы «как кабинет WB» */
+    --wbt-head-bg:#F0F0F3; --wbt-hover-bg:#F0F0F3; --wbt-border:#D1CFD7; --wbt-text:#000;
+    /* геометрия */
+    --r-card:18px; --r-panel:14px; --r-ctl:10px; --r-pill:999px; --gap:18px;
+    --ease:cubic-bezier(.2,.7,.2,1);
+    /* алиасы старых имён — чтобы var(--green/red/orange/muted/line) из JS работали */
+    --green:var(--success); --red:var(--danger); --orange:var(--warning); --muted:var(--ink-3); --line:var(--hairline);
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-    background:var(--bg);color:var(--ink);padding:18px 20px;font-size:15px;line-height:1.5}
-  h1{font-size:22px;font-weight:700;margin:0 0 6px}
-  .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
-  .exp{cursor:pointer;color:var(--muted);margin-right:4px;font-weight:700;display:inline-block}
-  .clabel{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);
+    padding:12px 14px;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  h1{font-size:22px;font-weight:700;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);margin:0 0 22px;font-size:14px}
+  .exp{cursor:pointer;color:var(--ink-3);margin-right:4px;font-weight:700;display:inline-block}
+  .clabel{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label)}
+
+  /* Инструкция */
   .howto{margin-bottom:18px}
   .howto summary{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;
-    font-size:14px;background:var(--card);border:1px solid #d4dae3;border-radius:10px;
-    padding:9px 16px;list-style:none;color:var(--ink);user-select:none}
+    font-size:13.5px;background:var(--card);border:1px solid var(--card-bd);border-radius:var(--r-ctl);
+    padding:9px 16px;list-style:none;color:var(--ink);user-select:none;box-shadow:var(--shadow);transition:.12s var(--ease)}
+  .howto summary:hover{background:var(--card-2)}
   .howto summary::-webkit-details-marker{display:none}
   .howto[open] summary{margin-bottom:12px}
-  .howto ul{background:var(--card);border-radius:14px;padding:16px 24px;margin:0;list-style:none;
-    box-shadow:0 1px 3px rgba(20,30,50,.05);font-size:14px;line-height:1.85;color:var(--ink)}
+  .howto ul{background:var(--card);border:1px solid var(--card-bd);border-radius:var(--r-panel);padding:16px 24px;margin:0;list-style:none;
+    box-shadow:var(--shadow);font-size:13.5px;line-height:1.85;color:var(--ink-2)}
   .howto li{padding-left:4px}
   .howto b{color:var(--ink)}
-  .tabs{display:flex;gap:8px}
-  .tab{font-size:15px;font-weight:600;padding:7px 14px;border-radius:9px;cursor:pointer;color:var(--muted);user-select:none}
-  .tab.active{background:var(--ink);color:#fff}
-  .stats{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px}
-  .stat{background:var(--card);border-radius:14px;padding:20px 24px;flex:1;min-width:180px;
-    box-shadow:0 1px 3px rgba(20,30,50,.05)}
-  .stat .lbl{color:var(--muted);font-size:14px;margin-bottom:10px}
-  .stat .val{font-size:38px;font-weight:700}
-  .stat .val.orange{color:var(--orange)} .stat .val.green{color:var(--green)} .stat .val.red{color:var(--red)}
-  .stat .val small{font-size:20px}
-  .bar{background:var(--card);border-radius:14px;padding:16px 24px;display:flex;align-items:center;
-    justify-content:space-between;margin-bottom:18px;box-shadow:0 1px 3px rgba(20,30,50,.05)}
-  .toggle{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;font-weight:600}
-  .sw{width:42px;height:24px;border-radius:12px;background:#d4dae3;position:relative;transition:.2s}
+
+  /* Карточки метрик */
+  .stats{display:flex;gap:var(--gap);flex-wrap:wrap;margin-bottom:18px}
+  .stat{background:var(--card);border:1px solid var(--card-bd);border-radius:var(--r-card);padding:20px 22px;flex:1;min-width:170px;box-shadow:var(--shadow)}
+  .stat .lbl{color:var(--ink-3);font-size:13px;margin-bottom:10px}
+  .stat .val{font-size:40px;font-weight:700;line-height:1;letter-spacing:-.02em}
+  .stat .val.orange{color:var(--warning)} .stat .val.green{color:var(--success)} .stat .val.red{color:var(--danger)}
+  .stat .val small{font-size:16px;font-weight:600}
+
+  /* Панель управления */
+  .bar{background:var(--card);border:1px solid var(--card-bd);border-radius:var(--r-card);padding:14px 20px;display:flex;align-items:center;
+    justify-content:space-between;gap:16px;margin-bottom:18px;box-shadow:var(--shadow);flex-wrap:wrap}
+  .toggle{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;font-weight:600;font-size:14px}
+  .sw{width:42px;height:24px;border-radius:var(--r-pill);background:#D4DAE3;position:relative;transition:.15s var(--ease)}
   .sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
-    background:#fff;transition:.2s}
-  .toggle.on .sw{background:var(--green)} .toggle.on .sw::after{left:21px}
-  .checked{color:var(--muted)} .checked b{color:var(--ink)}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}
-  .wrap{background:var(--card);border-radius:14px;overflow:auto;max-height:calc(100vh - 120px);
-    box-shadow:0 1px 3px rgba(20,30,50,.05)}
-  table{border-collapse:collapse;width:100%;min-width:780px}
-  th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line);border-right:1px solid var(--line);font-size:11px}
+    background:#fff;transition:.15s var(--ease);box-shadow:0 1px 2px rgba(16,24,40,.2)}
+  .toggle.on .sw{background:var(--primary)} .toggle.on .sw::after{left:21px}
+  .checked{color:var(--ink-3);font-size:13px} .checked b{color:var(--ink)}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-right:6px}
+  .iw-select{padding:11px 13px;border:1px solid var(--card-bd);border-radius:var(--r-ctl);font:600 14.5px var(--sans);
+    color:var(--ink);background:var(--card);cursor:pointer;transition:.12s var(--ease)}
+  .iw-select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(47,107,237,.18)}
+  #shownCount{font-size:13px;color:var(--ink-3)}
+
+  /* Кнопка «Обновить» (primary) */
+  button.refresh{background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:var(--r-ctl);padding:11px 16px;
+    cursor:pointer;font:600 15px var(--sans);transition:.12s var(--ease)}
+  button.refresh:hover{background:var(--primary-hover);border-color:var(--primary-hover)}
+  button.refresh:active{transform:translateY(1px)}
+  button.refresh:disabled{opacity:.5;cursor:default}
+
+  /* Таблица «как кабинет WB» */
+  .wrap{background:var(--card);border:1px solid var(--card-bd);border-radius:var(--r-panel);overflow:auto;
+    max-height:calc(100vh - 96px);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:780px;font-family:var(--wbt-table-font)}
+  th,td{padding:10px 8px;text-align:center;border-bottom:1px solid var(--wbt-border);border-right:1px solid var(--hairline)}
   th:last-child,td:last-child{border-right:0}
-  th{color:var(--muted);font-weight:700;font-size:13px;position:sticky;top:0;z-index:2;background:var(--card);vertical-align:bottom}
+  th{color:var(--wbt-text);font-weight:700;font-size:13px;position:sticky;top:0;z-index:10;background:var(--wbt-head-bg);vertical-align:bottom}
+  td{font-size:16px;color:var(--wbt-text);line-height:20px}
+  tbody tr:hover{background:var(--wbt-hover-bg)}
   th.left,td.left{text-align:left;padding-left:14px;width:120px;min-width:120px}
-  th.subj,td.subj{text-align:left;width:150px;min-width:120px;color:var(--ink);font-size:12px}
-  th.vc-col,td.vc-col{text-align:left;width:150px;min-width:120px;color:var(--muted);font-size:12px}
-  .name{font-weight:600;color:var(--orange);font-size:13px;line-height:1.25} .vc{color:var(--muted);font-size:11px}
-  .name a{color:var(--orange);text-decoration:none} .name a:hover{text-decoration:underline}
+  th.subj,td.subj{text-align:left;width:150px;min-width:120px;color:var(--ink);font-size:13px}
+  th.vc-col,td.vc-col{text-align:left;width:150px;min-width:120px;color:var(--ink-2);font-size:13px}
+  .name{font-weight:700;color:var(--primary);font-size:13px;line-height:1.25;font-family:var(--sans)} .vc{color:var(--ink-3);font-size:11px}
+  .name a{color:var(--primary);text-decoration:none} .name a:hover{text-decoration:underline}
   .sq{display:inline-block;width:22px;height:22px;border-radius:6px}
-  .sq.g{background:var(--green)} .sq.r{background:var(--red)}
-  .sq.num{color:#fff;font-size:12px;font-weight:700;line-height:22px;text-align:center}
+  .sq.g{background:var(--success)} .sq.r{background:var(--danger)}
+  .sq.num{color:#fff;font-size:12px;font-weight:700;line-height:22px;text-align:center;font-family:var(--sans)}
   .sq.click{cursor:pointer;outline:2px solid transparent}
   .sq.click:hover{outline:2px solid #c3cbd6}
-  th.sep,td.sep{border-left:2px solid #d4dae3}
+  th.sep,td.sep{border-left:2px solid var(--wbt-border)}
   /* режим «Только красные» — прячем зелёные квадраты, видны только красные */
   table.only-red .sq.g{visibility:hidden}
-  .score{font-weight:700;font-size:13px}
-  .pbar{height:4px;border-radius:2px;background:#e6eaf0;margin-top:6px;overflow:hidden}
-  .pbar > i{display:block;height:100%;border-radius:2px}
-  .empty{padding:60px;text-align:center;color:var(--muted)}
-  button.refresh{background:var(--ink);color:#fff;border:0;border-radius:10px;padding:10px 16px;
-    cursor:pointer;font-weight:600;font-size:15px}
-  button.refresh:disabled{opacity:.5;cursor:default}
-  .legend{font-size:12px;color:var(--muted);margin-top:14px}
+  .score{font-weight:700;font-size:13px;font-family:var(--sans)}
+  .pbar{height:8px;border-radius:var(--r-pill);background:#E6EAF0;margin-top:6px;overflow:hidden}
+  .pbar > i{display:block;height:100%;border-radius:var(--r-pill)}
+  .empty{padding:60px;text-align:center;color:var(--ink-3);font-family:var(--sans)}
+  .legend{font-size:12px;color:var(--ink-3);margin-top:14px}
 
   /* ===== Excel-фильтр/сортировка по столбцам ===== */
-  /* th у нас sticky — этого достаточно для позиционирования воронки (absolute) */
   #checktable th .iw-hl{cursor:pointer;user-select:none;display:inline-block}
-  #checktable th .iw-hl:hover{color:#2f6df6}
-  #checktable th .iw-sortar{color:#2f6df6;font-size:10px;font-weight:700}
-  /* воронка идёт сразу после названия столбца (inline), а не у края ячейки */
+  #checktable th .iw-hl:hover{color:var(--primary)}
+  #checktable th .iw-sortar{color:var(--primary);font-size:10px;font-weight:700}
   #checktable th .iw-fbtn{display:inline-flex;align-items:center;vertical-align:middle;margin-left:3px;
     padding:2px;border:0;background:transparent;color:#aab2c0;cursor:pointer;border-radius:4px;line-height:0}
-  #checktable th .iw-fbtn:hover{background:#e8f0ff;color:#2f6df6}
-  #checktable th .iw-fbtn.active{color:#2f6df6;background:#e8f0ff}
-  .ost-fmenu{position:fixed;z-index:600;width:222px;background:#fff;border:1px solid #e3e3ea;border-radius:10px;
-    box-shadow:0 8px 30px rgba(0,0,0,.15);padding:8px;text-align:left;color:var(--ink)}
+  #checktable th .iw-fbtn:hover{background:var(--primary-soft);color:var(--primary)}
+  #checktable th .iw-fbtn.active{color:var(--primary);background:var(--primary-soft)}
+  .ost-fmenu{position:fixed;z-index:600;width:222px;background:#fff;border:1px solid var(--card-bd);border-radius:var(--r-ctl);
+    box-shadow:var(--shadow-pop);padding:8px;text-align:left;color:var(--ink);font-family:var(--sans)}
   .ost-fmenu .ost-fm-sort{display:flex;flex-direction:column;gap:1px;margin-bottom:6px}
   .ost-fmenu .ost-fm-sort button{text-align:left;border:0;background:transparent;font:inherit;font-size:13px;padding:7px 9px;border-radius:6px;cursor:pointer}
-  .ost-fmenu .ost-fm-sort button:hover{background:#f2f2f5}
+  .ost-fmenu .ost-fm-sort button:hover{background:var(--card-2)}
   .ost-fmenu .ost-fm-search{padding:0 2px 6px}
-  .ost-fmenu .ost-fm-search input{width:100%;font:inherit;font-size:12.5px;padding:7px 9px;border:1px solid #e3e3ea;border-radius:7px;outline:none}
-  .ost-fmenu .ost-fm-all{display:flex;align-items:center;gap:7px;padding:6px 9px;border-top:1px solid #eee;cursor:pointer;font-size:13px}
-  .ost-fmenu .ost-fm-list{max-height:210px;overflow:auto;border-top:1px solid #eee;padding:4px 0}
+  .ost-fmenu .ost-fm-search input{width:100%;font:inherit;font-size:12.5px;padding:7px 9px;border:1px solid var(--card-bd);border-radius:7px;outline:none}
+  .ost-fmenu .ost-fm-all{display:flex;align-items:center;gap:7px;padding:6px 9px;border-top:1px solid var(--hairline);cursor:pointer;font-size:13px}
+  .ost-fmenu .ost-fm-list{max-height:210px;overflow:auto;border-top:1px solid var(--hairline);padding:4px 0}
   .ost-fmenu .ost-fm-row{display:flex;align-items:center;gap:7px;padding:5px 9px;cursor:pointer;border-radius:6px;white-space:nowrap;font-size:13px}
-  .ost-fmenu .ost-fm-row:hover{background:#f2f2f5}
+  .ost-fmenu .ost-fm-row:hover{background:var(--card-2)}
   .ost-fmenu .ost-fm-row span{overflow:hidden;text-overflow:ellipsis}
-  .ost-fmenu .ost-fm-foot{display:flex;gap:6px;padding:7px 4px 2px;border-top:1px solid #eee}
-  .ost-fmenu .ost-fm-foot button{flex:1;border:1px solid #e3e3ea;background:#fff;font:inherit;font-weight:600;font-size:12.5px;padding:7px;border-radius:7px;cursor:pointer}
-  .ost-fmenu .ost-fm-apply{background:#2f6df6!important;color:#fff!important;border-color:#2f6df6!important}
+  .ost-fmenu .ost-fm-foot{display:flex;gap:6px;padding:7px 4px 2px;border-top:1px solid var(--hairline)}
+  .ost-fmenu .ost-fm-foot button{flex:1;border:1px solid var(--card-bd);background:#fff;font:inherit;font-weight:600;font-size:12.5px;padding:7px;border-radius:7px;cursor:pointer}
+  .ost-fmenu .ost-fm-apply{background:var(--primary)!important;color:#fff!important;border-color:var(--primary)!important}
 </style>
 <!-- SDK Битрикс24: подключается, чтобы страница корректно жила внутри портала (iframe) -->
 <script src="//api.bitrix24.com/api/v1/"></script>
@@ -130,8 +166,7 @@
     <div style="display:flex;align-items:center;gap:20px">
       <div class="toggle" id="onlyIssues"><div class="sw"></div><span>Только с недочётами</span></div>
       <div class="toggle" id="onlyRed"><div class="sw"></div><span>Только красные</span></div>
-      <select id="catSelect" onchange="onCat()" style="padding:9px 12px;border:1px solid #d4dae3;
-        border-radius:10px;font-size:14.5px;font-weight:600;color:var(--ink);background:#fff;cursor:pointer">
+      <select id="catSelect" class="iw-select" onchange="onCat()">
         <option value="all">Все категории</option>
       </select>
       <span id="shownCount" style="font-size:13px;color:var(--muted)"></span>
