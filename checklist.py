@@ -93,6 +93,8 @@ METRICS = [
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
     ("promo_block",    "Блокировка акций",  "manual"),
+    ("photo_tags",     "Отметить товар",    "parse"),
+    ("photo_tryon",    "Примерка на фото",  "manual"),
 ]
 # Метрики, которые можно переопределить вручную (всё, что не чистый auto):
 # для них ручная отметка — фолбэк, когда парсинг не смог определить.
@@ -510,6 +512,9 @@ def _enrich(item, card, ov):
     # Рекомендации продавца — поле has_seller_recommendations из card.json
     if pub.get("recommendations") is not None:
         item["metrics"]["recommendations"] = pub["recommendations"]
+    # Отметить товар (Джем) — поле has_photo_tags из card.json
+    if pub.get("photo_tags") is not None:
+        item["metrics"]["photo_tags"] = pub["photo_tags"]
     # Полный список характеристик категории (заполнено/не заполнено), на русском
     item["chars"] = _full_chars(card)
     # Ручные отметки менеджера имеют приоритет — применяем последними, чтобы
