@@ -471,7 +471,12 @@ def competitors_debug():
 @app.route("/checklist", methods=["GET", "POST"])
 def checklist_page():
     # POST приходит, когда страница открыта как приложение в Битрикс24 (iframe)
-    return render_template("checklist.html")
+    resp = app.make_response(render_template("checklist.html"))
+    # Без этого Битрикс/браузер кэширует старую вёрстку (старый JS/столбцы)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 # Путь установки для Битрикс24. Отдаёт ту же страницу чек-листа: она и
@@ -485,7 +490,7 @@ def checklist_install():
 @app.route("/checklist/data", methods=["GET"])
 def checklist_data():
     data = checklist.get_cached()
-    return jsonify({
+    resp = jsonify({
         "checked_at": data.get("checked_at"),
         "items": data.get("items", []),
         "summary": data.get("summary", {}),
@@ -494,6 +499,12 @@ def checklist_data():
         "vision": vision.enabled(),
         "vision_mode": vision.mode(),
     })
+    # Запрещаем кэш: иначе браузер/Битрикс отдают старый ответ (старый набор
+    # столбцов) и новые метрики не появляются, сколько ни обновляй страницу.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.route("/checklist/refresh", methods=["POST", "GET"])

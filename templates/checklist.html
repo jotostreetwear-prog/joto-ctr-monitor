@@ -403,7 +403,8 @@ function render(){
 }
 
 async function load(){
-  const r = await fetch('/checklist/data'); DATA = await r.json();
+  // анти-кэш: ?t=… не даёт браузеру/Битриксу отдать старый ответ со старыми столбцами
+  const r = await fetch('/checklist/data?t=' + Date.now(), {cache:'no-store'}); DATA = await r.json();
   META = DATA.metrics || META; render();
   if(DATA.computing) setTimeout(load, 4000);
 }
