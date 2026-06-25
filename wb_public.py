@@ -123,13 +123,15 @@ def _has_size_grid(cj):
 
 def get_public_signals(nm_id):
     """Сигналы из публичной карточки WB: рич-контент, размерная сетка,
-    рекомендации продавца (всё — из card.json)."""
+    рекомендации продавца, отметка товара на фото (всё — из card.json)."""
     cj = fetch_card_json(nm_id)
     rich = cj.get("has_rich") if isinstance(cj, dict) and "has_rich" in cj else None
+    tags = cj.get("has_photo_tags") if isinstance(cj, dict) and "has_photo_tags" in cj else None
     return {
         "rich_content": rich,
         "grid_4th": _has_size_grid(cj),
         "recommendations": _seller_recommendations(cj),
+        "photo_tags": (bool(tags) if tags is not None else None),
     }
 
 
