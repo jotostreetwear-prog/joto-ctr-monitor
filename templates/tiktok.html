@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Автопостинг TikTok</title>
+<style>
+  :root{--bg:#eef2f6;--card:#fff;--ink:#1f2733;--muted:#8a94a6;--green:#22c55e;--red:#ef4444;
+    --orange:#f97316;--line:#eef1f5;--blue:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);
+    color:var(--ink);padding:32px 40px}
+  h1{font-size:28px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 24px}
+  .panel{background:var(--card);border-radius:14px;padding:20px 24px;margin-bottom:20px;
+    box-shadow:0 1px 3px rgba(20,30,50,.05)}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px}
+  input,textarea{width:100%;border:1px solid #d4dae3;border-radius:10px;padding:11px;
+    font-size:14px;font-family:inherit}
+  textarea{min-height:70px;resize:vertical}
+  .row{display:flex;gap:14px;align-items:center;margin-top:14px;flex-wrap:wrap}
+  button{background:var(--ink);color:#fff;border:0;border-radius:10px;padding:11px 20px;cursor:pointer;
+    font-weight:600;font-size:14px}
+  button.ghost{background:#fff;color:var(--ink);border:1px solid #d4dae3}
+  button:disabled{opacity:.5;cursor:default}
+  .hint{color:var(--muted);font-size:13px}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .ok{background:#dcfce7;color:#166534}.warn{background:#fef3c7;color:#92400e}.bad{background:#fee2e2;color:#991b1b}
+  table{border-collapse:collapse;width:100%;margin-top:8px}
+  th,td{padding:11px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  .muted{color:var(--muted)}
+  a{color:var(--blue)}
+  .st-scheduled{color:var(--orange);font-weight:600}
+  .st-published{color:var(--green);font-weight:600}
+  .st-error{color:var(--red);font-weight:600}
+</style>
+</head>
+<body>
+  <h1>Автопостинг TikTok</h1>
+  <p class="sub">Подключи аккаунт и поставь ролики в очередь — бот опубликует их по расписанию.</p>
+
+  <div class="panel" id="connPanel">
+    <div id="connState" class="hint">Загрузка…</div>
+    <div class="row">
+      <button id="connectBtn" onclick="location.href='/tiktok/login'">Подключить TikTok</button>
+      <span id="privacyNote" class="hint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 4px">Импорт из папки Яндекс.Диска</h3>
+    <p class="hint" style="margin:0 0 6px">Бот сам скачает ролики из папки и зальёт в TikTok. Видео ставятся по очереди с заданным интервалом.</p>
+    <label>Ссылка на публичную папку Яндекс.Диска</label>
+    <input id="yaUrl" placeholder="https://disk.yandex.ru/d/...">
+    <label>Подпись (можно использовать {name} — имя файла)</label>
+    <input id="yaCaption" placeholder="Новый дроп JOTO {name} #streetwear">
+    <div class="row">
+      <div style="flex:1;min-width:200px">
+        <label style="margin-top:0">Время первого поста (UTC; МСК = UTC+3)</label>
+        <input id="yaStart" type="datetime-local">
+      </div>
+      <div style="width:160px">
+        <label style="margin-top:0">Интервал, часов</label>
+        <input id="yaInterval" type="number" value="24" min="1">
+      </div>
+    </div>
+    <div class="row">
+      <button onclick="importYandex()">Импортировать в очередь</button>
+      <span id="yaMsg" class="hint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 4px">Добавить один ролик по ссылке</h3>
+    <label>Ссылка на видео (публичный URL, mp4)</label>
+    <input id="videoUrl" placeholder="https://...mp4">
+    <label>Подпись к ролику</label>
+    <textarea id="caption" placeholder="Текст поста, хэштеги…"></textarea>
+    <label>Время публикации (по UTC; МСК = UTC+3)</label>
+    <input id="publishAt" type="datetime-local">
+    <div class="row">
+      <button onclick="addToQueue()">Поставить в очередь</button>
+      <span id="addMsg" class="hint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="justify-content:space-between;margin-top:0">
+      <h3 style="margin:0">Очередь</h3>
+      <div class="row" style="margin:0">
+        <button class="ghost" onclick="clearQueue()">Очистить очередь</button>
+        <button class="ghost" onclick="publishNow()">Опубликовать созревшие сейчас</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Время (UTC)</th><th>Видео</th><th>Подпись</th><th>Статус</th><th></th></tr></thead>
+      <tbody id="queueBody"><tr><td colspan="5" class="muted">Загрузка…</td></tr></tbody>
+    </table>
+  </div>
+
+<script>
+async function load(){
+  const r = await fetch('/tiktok/status'); const d = await r.json();
+  const cs = document.getElementById('connState');
+  const cb = document.getElementById('connectBtn');
+  const pn = document.getElementById('privacyNote');
+  if(!d.enabled){
+    cs.innerHTML = '<span class="pill bad">не настроено</span> Задай TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET и PUBLIC_BASE_URL в переменных Railway.';
+  } else if(d.connected){
+    const nick = (d.account && d.account.nickname) ? (' — '+d.account.nickname) : '';
+    cs.innerHTML = '<span class="pill ok">подключено'+nick+'</span>';
+    cb.textContent = 'Переподключить TikTok';
+  } else {
+    cs.innerHTML = '<span class="pill warn">не подключено</span> Нажми кнопку и подтверди доступ в TikTok.';
+  }
+  pn.textContent = d.privacy === 'PUBLIC_TO_EVERYONE'
+    ? 'Режим: публикация в ленту (публично).'
+    : 'Режим: SELF_ONLY (черновик/приватно) — до одобрения аудита приложения.';
+
+  const tb = document.getElementById('queueBody');
+  if(!d.queue || !d.queue.length){ tb.innerHTML = '<tr><td colspan="5" class="muted">Очередь пуста</td></tr>'; return; }
+  tb.innerHTML = d.queue.map(function(i){
+    const stCls = 'st-'+(i.status||'');
+    const stTxt = i.status==='published' ? 'опубликовано' : i.status==='error' ? 'ошибка' : 'запланировано';
+    const extra = i.error ? '<div class="muted">'+escapeHtml(i.error)+'</div>' : '';
+    return '<tr>'
+      +'<td>'+escapeHtml(i.publish_at||'')+'</td>'
+      +'<td><a href="'+escapeAttr(i.video_url)+'" target="_blank">видео</a></td>'
+      +'<td>'+escapeHtml((i.caption||'').slice(0,80))+'</td>'
+      +'<td><span class="'+stCls+'">'+stTxt+'</span>'+extra+'</td>'
+      +'<td><button class="ghost" onclick="del('+i.id+')">удалить</button></td>'
+      +'</tr>';
+  }).join('');
+}
+function escapeHtml(s){return (s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+function escapeAttr(s){return (s||'').replace(/"/g,'&quot;');}
+
+async function addToQueue(){
+  const body = {
+    video_url: document.getElementById('videoUrl').value,
+    caption: document.getElementById('caption').value,
+    publish_at: document.getElementById('publishAt').value,
+  };
+  const msg = document.getElementById('addMsg');
+  const r = await fetch('/tiktok/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json();
+  if(d.ok){ msg.textContent='Добавлено ✓'; document.getElementById('videoUrl').value=''; document.getElementById('caption').value=''; load(); }
+  else { msg.textContent = d.error || 'Ошибка'; }
+}
+async function del(id){
+  await fetch('/tiktok/queue/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});
+  load();
+}
+async function importYandex(){
+  const body = {
+    folder_url: document.getElementById('yaUrl').value,
+    caption: document.getElementById('yaCaption').value,
+    start_at: document.getElementById('yaStart').value,
+    interval_hours: parseFloat(document.getElementById('yaInterval').value) || 24,
+  };
+  const msg = document.getElementById('yaMsg');
+  msg.textContent = 'Читаю папку…';
+  const r = await fetch('/tiktok/yandex/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json();
+  if(d.ok){ msg.textContent = 'Добавлено '+d.added+' из '+d.total+' видео ✓'; load(); }
+  else { msg.textContent = d.error || 'Ошибка'; }
+}
+async function clearQueue(){
+  if(!confirm('Удалить ВСЕ записи из очереди? Это не трогает уже опубликованные ролики в TikTok.')) return;
+  await fetch('/tiktok/queue/clear',{method:'POST'});
+  load();
+}
+async function publishNow(){
+  await fetch('/tiktok/publish-now',{method:'POST'});
+  setTimeout(load, 1500);
+}
+load();
+</script>
+</body>
+</html>

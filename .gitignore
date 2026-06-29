@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 overrides.json
 vision_cache.json
+tiktok_tokens.json
+tiktok_queue.json
