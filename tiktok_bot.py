@@ -24,9 +24,95 @@ import tiktok
 app = Flask(__name__)
 
 
+_PAGE = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} — JOTO Autoposter</title>
+<style>body{{font-family:system-ui,Arial,sans-serif;max-width:760px;margin:40px auto;
+padding:0 16px;line-height:1.6;color:#1a1a1a}}h1{{font-size:24px}}h2{{font-size:18px;margin-top:28px}}
+a{{color:#0a58ca}}.muted{{color:#666;font-size:14px}}</style></head><body>{body}
+<p class="muted" style="margin-top:32px"><a href="/">Главная</a> ·
+<a href="/terms">Условия</a> · <a href="/privacy">Конфиденциальность</a></p></body></html>"""
+
+
 @app.route("/", methods=["GET"])
 def index():
-    return redirect("/tiktok")
+    body = """
+    <h1>JOTO Autoposter</h1>
+    <p>Сервис для планирования и автоматической публикации собственных коротких
+    видео бренда в аккаунт владельца. Владелец загружает свои видеофайлы в облачное
+    хранилище, а сервис по расписанию публикует их в его собственный профиль.</p>
+    <p>A scheduling tool that lets a brand owner publish their own short videos to
+    their own social account. The owner uploads their own video files to cloud
+    storage and the service publishes them to the owner's profile on a schedule.</p>
+    <h2>Возможности</h2>
+    <ul>
+      <li>Импорт собственных видео из облачной папки владельца</li>
+      <li>Планирование публикаций по расписанию</li>
+      <li>Публикация в собственный аккаунт владельца</li>
+    </ul>
+    <p class="muted">Сервис работает только с аккаунтом самого владельца, который
+    дал явное разрешение через авторизацию.</p>
+    """
+    return _PAGE.format(title="Главная", body=body)
+
+
+@app.route("/terms", methods=["GET"])
+def terms():
+    body = """
+    <h1>Условия использования / Terms of Service</h1>
+    <p class="muted">Обновлено: 2026</p>
+    <p>Используя этот сервис, вы соглашаетесь с приведёнными условиями. Сервис
+    предназначен для планирования и публикации собственных видеоматериалов
+    владельца в его собственный аккаунт.</p>
+    <h2>Использование</h2>
+    <p>Сервисом пользуется владелец аккаунта самостоятельно. Запрещено публиковать
+    чужой контент без прав, а также материалы, нарушающие правила площадок и
+    законодательство.</p>
+    <h2>Ответственность</h2>
+    <p>Владелец несёт ответственность за публикуемый контент. Сервис предоставляется
+    «как есть», без гарантий бесперебойной работы.</p>
+    <h2>Контакты</h2>
+    <p>По вопросам: joto.streetwear@gmail.com</p>
+    <hr>
+    <p>By using this service you agree to these terms. The service is intended for
+    scheduling and publishing the owner's own video content to the owner's own
+    account. The owner is responsible for the content. The service is provided
+    "as is". Contact: joto.streetwear@gmail.com</p>
+    """
+    return _PAGE.format(title="Условия", body=body)
+
+
+@app.route("/privacy", methods=["GET"])
+def privacy():
+    body = """
+    <h1>Политика конфиденциальности / Privacy Policy</h1>
+    <p class="muted">Обновлено: 2026</p>
+    <p>Сервис обрабатывает минимум данных, необходимых только для публикации видео
+    владельца в его собственный аккаунт.</p>
+    <h2>Какие данные используются</h2>
+    <ul>
+      <li>Токен авторизации аккаунта (после явного разрешения владельца) — чтобы
+      публиковать видео от его имени.</li>
+      <li>Базовые данные профиля (имя пользователя) — чтобы показать, какой аккаунт
+      подключён.</li>
+      <li>Видеофайлы из облачной папки владельца — только для загрузки и публикации.</li>
+    </ul>
+    <h2>Что мы НЕ делаем</h2>
+    <p>Мы не продаём и не передаём данные третьим лицам и не используем их для
+    рекламы. Данные применяются исключительно для работы сервиса.</p>
+    <h2>Удаление</h2>
+    <p>Владелец может в любой момент отозвать доступ; после этого токен удаляется и
+    публикации прекращаются.</p>
+    <h2>Контакты</h2>
+    <p>По вопросам: joto.streetwear@gmail.com</p>
+    <hr>
+    <p>The service processes the minimum data needed to publish the owner's videos to
+    the owner's own account: the account authorization token (granted by the owner),
+    basic profile info (username), and the owner's video files (only for upload). We
+    do not sell or share data with third parties and do not use it for advertising.
+    The owner can revoke access at any time. Contact: joto.streetwear@gmail.com</p>
+    """
+    return _PAGE.format(title="Конфиденциальность", body=body)
 
 
 @app.route("/<fname>")
