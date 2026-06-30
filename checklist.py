@@ -90,6 +90,8 @@ METRICS = [
     ("barcode",        "Баркод",            "auto"),
     ("grid_4th",       "Сетка на фото",     "parse"),
     ("recommendations","Рекомендации",      "parse"),
+    ("photo_tags",     "Отметить товар",    "parse"),
+    ("photo_tryon",    "Примерка на фото",  "manual"),
     ("rating",         "Рейтинг",           "auto"),
     ("seo",            "СЕО",               "auto"),
     ("promo_block",    "Блокировка акций",  "manual"),
@@ -103,8 +105,9 @@ MANUAL_KEYS = [k for k, _, kind in METRICS if kind != "auto"]
 MANUAL_DEFAULTS = {"certificates": True}
 TOTAL_METRICS = len(METRICS)
 
-# Метрики только для авто-определения (нельзя отметить вручную): рейтинг и СЕО.
-AUTO_ONLY_KEYS = {"rating", "seo"}
+# Метрики только для авто-определения (нельзя отметить вручную):
+# рейтинг, СЕО и «Отметить товар» (тянутся из WB).
+AUTO_ONLY_KEYS = {"rating", "seo", "photo_tags"}
 # Метрики, которые можно отмечать/переопределять вручную — все, кроме авто-только.
 # Авто-значение остаётся базовым, ручная отметка его перебивает и сохраняется.
 OVERRIDABLE_KEYS = {k for k, _, _ in METRICS if k not in AUTO_ONLY_KEYS}
@@ -510,6 +513,9 @@ def _enrich(item, card, ov):
     # Рекомендации продавца — поле has_seller_recommendations из card.json
     if pub.get("recommendations") is not None:
         item["metrics"]["recommendations"] = pub["recommendations"]
+    # Отметить товар (Джем) — поле has_photo_tags из card.json
+    if pub.get("photo_tags") is not None:
+        item["metrics"]["photo_tags"] = pub["photo_tags"]
     # Полный список характеристик категории (заполнено/не заполнено), на русском
     item["chars"] = _full_chars(card)
     # Ручные отметки менеджера имеют приоритет — применяем последними, чтобы
