@@ -86,6 +86,9 @@ DAILY_CHECKLIST_ADD_MEETINGS = os.environ.get(
 # id пользователя-бота Joto (= BITRIX_BOT_USER_ID у joto-agent). Если задан —
 # задача-чеклист ставится ОТ ЕГО ИМЕНИ (постановщик = Joto).
 JOTO_BOT_USER_ID = os.environ.get("JOTO_BOT_USER_ID", "").strip()
+# Часовой пояс портала Битрикс (смещение), чтобы крайний срок был «день в день».
+# По умолчанию +05:00 (портал на 2 часа впереди МСК).
+BITRIX_TZ_OFFSET = os.environ.get("BITRIX_TZ_OFFSET", "+05:00").strip()
 DAILY_CHECKLIST_WEEKDAYS_ONLY = os.environ.get(
     "DAILY_CHECKLIST_WEEKDAYS_ONLY", "1").strip().lower() in ("1", "true", "yes", "да")
 _DCHK_VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
@@ -755,7 +758,9 @@ def create_daily_checklist(force=False):
     fields = {
         "TITLE": title,
         "RESPONSIBLE_ID": DAILY_CHECKLIST_USER_ID,
-        "DEADLINE": now.strftime("%Y-%m-%dT23:59:00+03:00"),
+        # Крайний срок — конец СЕГОДНЯШНЕГО дня в часовом поясе портала,
+        # чтобы дедлайн был день в день (не уезжал на завтра).
+        "DEADLINE": now.strftime("%Y-%m-%d") + f"T23:59:00{BITRIX_TZ_OFFSET}",
     }
     if JOTO_BOT_USER_ID:
         fields["CREATED_BY"] = JOTO_BOT_USER_ID  # постановщик = бот Joto
