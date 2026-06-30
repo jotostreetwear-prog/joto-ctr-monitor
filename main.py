@@ -4,6 +4,7 @@ import httpx
 import threading
 import schedule
 import time
+import re
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta, timezone
 
@@ -66,6 +67,29 @@ BUDGET_THRESHOLD = int(os.environ.get("BUDGET_THRESHOLD", "100"))
 # в Битрикс от имени бота JOTO. POST на JOTO_AGENT_RELAY_URL с токеном.
 JOTO_AGENT_RELAY_URL = os.environ.get("JOTO_AGENT_RELAY_URL", "").strip().rstrip("/")
 JOTO_AGENT_RELAY_TOKEN = os.environ.get("JOTO_AGENT_RELAY_TOKEN", "").strip()
+
+# Ежедневный чек-лист (задача в Битрикс24) для менеджера.
+#   DAILY_CHECKLIST_USER_ID — кому ставим задачу (ответственный). По умолч. Татьяна.
+#   DAILY_CHECKLIST_ITEMS   — постоянные ежедневные пункты (через «;» или «,»).
+#   DAILY_CHECKLIST_ADD_MEETINGS — добавлять ли сегодняшние созвоны пунктами.
+DAILY_CHECKLIST_USER_ID = os.environ.get(
+    "DAILY_CHECKLIST_USER_ID", TATIANA_USER_ID).strip()
+DAILY_CHECKLIST_ITEMS = [
+    v.strip() for v in re.split(r"[;\n]", os.environ.get(
+        "DAILY_CHECKLIST_ITEMS",
+        "Контроль РК на Мурадянц;Контроль РК на Кисиеве;"
+        "Обработка заявок на возврат;Проверка необходимости подсорта",
+    )) if v.strip()
+]
+DAILY_CHECKLIST_ADD_MEETINGS = os.environ.get(
+    "DAILY_CHECKLIST_ADD_MEETINGS", "1").strip().lower() in ("1", "true", "yes", "да")
+DAILY_CHECKLIST_WEEKDAYS_ONLY = os.environ.get(
+    "DAILY_CHECKLIST_WEEKDAYS_ONLY", "1").strip().lower() in ("1", "true", "yes", "да")
+_DCHK_VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+DAILY_CHECKLIST_STATE = (
+    os.path.join(_DCHK_VOL, "daily_checklist.json") if _DCHK_VOL
+    else "/data/daily_checklist.json" if os.path.isdir("/data")
+    else "daily_checklist.json")
 
 # ===================== БИТРИКС =====================
 
@@ -580,6 +604,138 @@ def check_meetings(force=False, only_uid=None):
     return {"ok": True, "meetings": len(due_events), "sent": sent}
 
 
+# ===================== ЕЖЕДНЕВНЫЙ ЧЕК-ЛИСТ (ЗАДАЧА В БИТРИКС) =====================
+
+def _b24_call(method, payload):
+    """Вызов REST Битрикс через основной вебхук. Возвращает (result, error)."""
+    try:
+        r = httpx.post(f"{B24_WEBHOOK}/{method}.json", json=payload, timeout=20)
+        data = r.json()
+        if isinstance(data, dict) and data.get("error"):
+            err = f"{data.get('error')}: {data.get('error_description')}"
+            print(f"Чек-лист-задача: {method} ошибка {err}")
+            return None, err
+        return (data.get("result") if isinstance(data, dict) else data), None
+    except Exception as e:
+        print(f"Чек-лист-задача: {method} исключение {e}")
+        return None, str(e)
+
+
+def _dchk_last_date():
+    try:
+        with open(DAILY_CHECKLIST_STATE, "r", encoding="utf-8") as f:
+            return json.load(f).get("last")
+    except Exception:
+        return None
+
+
+def _dchk_save(today, task_id):
+    try:
+        os.makedirs(os.path.dirname(DAILY_CHECKLIST_STATE) or ".", exist_ok=True)
+        with open(DAILY_CHECKLIST_STATE, "w", encoding="utf-8") as f:
+            json.dump({"last": today, "task_id": task_id}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Чек-лист-задача: не сохранил состояние {e}")
+
+
+def _dchk_prev_task_id():
+    try:
+        with open(DAILY_CHECKLIST_STATE, "r", encoding="utf-8") as f:
+            return json.load(f).get("task_id")
+    except Exception:
+        return None
+
+
+def _dchk_carryover_items():
+    """Невыполненные пункты вчерашнего чек-листа (кроме постоянных и созвонов)."""
+    tid = _dchk_prev_task_id()
+    if not tid:
+        return []
+    res, _ = _b24_call("task.checklistitem.getlist", {"TASKID": tid})
+    raw = res if isinstance(res, list) else (
+        res.get("items") if isinstance(res, dict) else []) or []
+    out = []
+    for it in raw:
+        if not isinstance(it, dict):
+            continue
+        done = str(it.get("IS_COMPLETE") or it.get("isComplete") or "N").upper()
+        if done in ("Y", "1", "TRUE"):
+            continue
+        title = (it.get("TITLE") or it.get("title") or "").strip()
+        # снимаем старый префикс переноса, чтобы он не задваивался
+        title = re.sub(r"^⏭ \(со вчера\)\s*", "", title).strip()
+        # постоянные пункты добавятся сами, созвоны — на каждый день свои
+        if not title or title in DAILY_CHECKLIST_ITEMS or title.startswith("Созвон "):
+            continue
+        out.append(title)
+    return out
+
+
+def create_daily_checklist(force=False):
+    """Создаёт в Битрикс24 задачу-чеклист на сегодня для менеджера:
+    постоянные пункты + сегодняшние созвоны. Один раз в день."""
+    now = datetime.now(MSK)
+    today = now.strftime("%Y-%m-%d")
+    print(f"Чек-лист-задача: запуск {now.strftime('%Y-%m-%d %H:%M')}")
+
+    if not B24_WEBHOOK:
+        return {"ok": False, "error": "no_webhook"}
+    if DAILY_CHECKLIST_WEEKDAYS_ONLY and now.weekday() >= 5 and not force:
+        print("Чек-лист-задача: выходной — пропуск")
+        return {"ok": True, "skipped": "weekend"}
+    if _dchk_last_date() == today and not force:
+        print("Чек-лист-задача: на сегодня уже создана")
+        return {"ok": True, "skipped": "already_created"}
+
+    # пункты: постоянные + перенос невыполненного со вчера + сегодняшние созвоны
+    items = list(DAILY_CHECKLIST_ITEMS)
+    for c in _dchk_carryover_items():
+        tagged = f"⏭ (со вчера) {c}"
+        if tagged not in items:
+            items.append(tagged)
+    if DAILY_CHECKLIST_ADD_MEETINGS:
+        try:
+            for ev in meetings.fetch_today_events():
+                when = ev["start"].strftime("%H:%M") if ev.get("start") else ""
+                items.append(f"Созвон {when} — {ev.get('name','')}".strip())
+        except Exception as e:
+            print(f"Чек-лист-задача: созвоны не получены {e}")
+
+    title = f"✅ Ежедневный чек-лист на {now.strftime('%d.%m.%Y')}"
+    res, err = _b24_call("tasks.task.add", {"fields": {
+        "TITLE": title,
+        "RESPONSIBLE_ID": DAILY_CHECKLIST_USER_ID,
+        "DEADLINE": now.strftime("%Y-%m-%dT23:59:00+03:00"),
+    }})
+    task_id = None
+    if isinstance(res, dict):
+        task = res.get("task") or res
+        task_id = task.get("id") or task.get("ID")
+    if not task_id:
+        return {"ok": False, "error": f"task_not_created: {err}"}
+
+    added = 0
+    for it in items:
+        r, _ = _b24_call("task.checklistitem.add",
+                         {"TASKID": task_id, "FIELDS": {"TITLE": it}})
+        if r is not None:
+            added += 1
+        time.sleep(0.2)
+
+    if not force:
+        _dchk_save(today, task_id)
+    print(f"Чек-лист-задача создана #{task_id}, пунктов {added}/{len(items)}")
+    return {"ok": True, "task_id": task_id, "items": added, "total": len(items)}
+
+
+@app.route("/daily-checklist/create", methods=["GET"])
+def daily_checklist_create():
+    # /daily-checklist/create?force=1 — создать прямо сейчас (игнор дедупликации)
+    force = request.args.get("force") in ("1", "true", "yes")
+    result = create_daily_checklist(force=force)
+    return jsonify(result)
+
+
 @app.route("/meetings/check-now", methods=["GET"])
 def meetings_check_now():
     # /meetings/check-now?force=1 — разослать сразу всем, игнорируя время и дубли
@@ -888,6 +1044,8 @@ def debug_bitrix():
 
 def run_scheduler():
     schedule.every().day.at("06:00").do(check_ctr)
+    # Ежедневный чек-лист (задача в Битрикс) — ровно в 09:00 МСК (06:00 UTC)
+    schedule.every().day.at("06:00").do(create_daily_checklist)
     # Проверка остатка бюджета кампаний каждые полчаса
     schedule.every(30).minutes.do(check_budgets)
     # Единый утренний дайджест Татьяне (чек-лист и т.п.) — одним сообщением.
