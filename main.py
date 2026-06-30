@@ -571,6 +571,7 @@ def check_meetings(force=False, only_uid=None):
     #    человека (при самом первом напоминании), потом не повторяем.
     sent = 0
     announced_now = set()  # кому приветствие уже добавили в этом запуске
+    tatiana_items = []     # задачи Татьяны из созвонов — в её чек-лист
     for ev in due_events:
         targets = ev["attendee_ids"]
         if test_mode:
@@ -593,12 +594,22 @@ def check_meetings(force=False, only_uid=None):
                     announced_now.add(uid)
                     if not test_mode:
                         notified.add(ann_key)
+            # Задачи Татьяны из этого созвона — потом добавим в её чек-лист
+            if str(uid) == str(DAILY_CHECKLIST_USER_ID):
+                when = ev["start"].strftime("%H:%M") if ev.get("start") else ""
+                for t in tasks:
+                    tt = (t.get("title") or "").strip()
+                    if tt:
+                        tatiana_items.append(f"[Созвон {when}] {tt}")
             time.sleep(0.3)  # бережём лимиты Битрикс
         if not test_mode:
             notified.add(meetings.event_key(ev))
 
     if not test_mode:
         meetings.save_notified(notified)
+        # После созвонов — добавить задачи Татьяны в её сегодняшний чек-лист
+        if tatiana_items:
+            _dchk_add_items(tatiana_items)
 
     print(f"Созвоны: созвонов {len(due_events)}, отправлено сообщений {sent}")
     return {"ok": True, "meetings": len(due_events), "sent": sent}
@@ -669,6 +680,42 @@ def _dchk_carryover_items():
             continue
         out.append(title)
     return out
+
+
+def _dchk_add_items(titles):
+    """Добавляет пункты в СЕГОДНЯШНИЙ чек-лист Татьяны (без дублей).
+    Если сегодняшний чек-лист ещё не создан — ничего не делает."""
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    try:
+        with open(DAILY_CHECKLIST_STATE, "r", encoding="utf-8") as f:
+            st = json.load(f)
+    except Exception:
+        st = {}
+    tid = st.get("task_id")
+    if st.get("last") != today or not tid:
+        print("Чек-лист-задача: сегодняшний чек-лист ещё не создан — пропуск дополнения")
+        return 0
+
+    res, _ = _b24_call("task.checklistitem.getlist", {"TASKID": tid})
+    raw = res if isinstance(res, list) else (
+        res.get("items") if isinstance(res, dict) else []) or []
+    existing = {(it.get("TITLE") or it.get("title") or "").strip()
+                for it in raw if isinstance(it, dict)}
+
+    added = 0
+    for t in titles:
+        t = (t or "").strip()
+        if not t or t in existing:
+            continue
+        r, _ = _b24_call("task.checklistitem.add",
+                         {"TASKID": tid, "FIELDS": {"TITLE": t}})
+        if r is not None:
+            added += 1
+            existing.add(t)
+        time.sleep(0.2)
+    if added:
+        print(f"Чек-лист-задача: добавлено пунктов после созвона {added}")
+    return added
 
 
 def create_daily_checklist(force=False):
