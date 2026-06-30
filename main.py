@@ -769,8 +769,9 @@ def create_daily_checklist(force=False):
             added += 1
         time.sleep(0.2)
 
-    if not force:
-        _dchk_save(today, task_id)
+    # Сохраняем id сегодняшнего чек-листа (чтобы дополнять его после созвонов
+    # и переносить невыполненное на завтра) — в т.ч. при force-создании.
+    _dchk_save(today, task_id)
     print(f"Чек-лист-задача создана #{task_id}, пунктов {added}/{len(items)}")
     return {"ok": True, "task_id": task_id, "items": added, "total": len(items)}
 
