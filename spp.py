@@ -61,15 +61,53 @@ def compute_spp(seller, client):
     return round((seller - float(client)) / float(seller) * 100.0, 1)
 
 
-def seller_prices_map():
-    """{nmID(str): цена продавца ₽} по всему кабинету (Prices API WB)."""
+# Какую цену продавца брать за базу СПП: "price" (до скидки продавца) или
+# "discounted" (после). Эвирма считает от цены ДО скидки — по умолчанию "price".
+SPP_BASE = os.environ.get("SPP_BASE", "price").strip()
+
+
+def prices_full_map():
+    """{nmID(str): {'price':.., 'discounted':..}} по всему кабинету (Prices API)."""
     out = {}
-    try:
-        for nm, price in checklist._fetch_prices().items():
-            if price:
-                out[str(nm)] = price
-    except Exception as e:
-        print(f"СПП: цены продавца не получены: {e}")
+    headers = {"Authorization": checklist.WB_PRICES_TOKEN}
+    offset = 0
+    while True:
+        try:
+            r = httpx.get(
+                f"{checklist.PRICES_API}/api/v2/list/goods/filter",
+                headers=headers, params={"limit": 1000, "offset": offset}, timeout=30,
+            )
+        except Exception as e:
+            print(f"СПП: prices ошибка {e}")
+            break
+        if r.status_code != 200:
+            print(f"СПП: prices {r.status_code}: {r.text[:150]}")
+            break
+        goods = (r.json().get("data") or {}).get("listGoods") or []
+        if not goods:
+            break
+        for g in goods:
+            sizes = g.get("sizes") or []
+            if sizes:
+                out[str(g.get("nmID"))] = {
+                    "price": sizes[0].get("price"),
+                    "discounted": sizes[0].get("discountedPrice"),
+                }
+        if len(goods) < 1000:
+            break
+        offset += 1000
+        time.sleep(0.6)
+    return out
+
+
+def seller_prices_map():
+    """{nmID(str): базовая цена продавца ₽ (по SPP_BASE)} по всему кабинету."""
+    out = {}
+    for nm, pv in prices_full_map().items():
+        base = pv.get("price") if SPP_BASE == "price" else pv.get("discounted")
+        base = base or pv.get("discounted") or pv.get("price")
+        if base:
+            out[nm] = base
     return out
 
 
@@ -117,22 +155,24 @@ def debug_full(nm):
               if isinstance(prod, dict) else None)
     ext = prod.get("extended") if isinstance(prod, dict) else None
     basic, client = _extract_basic_client(prod)
-    # цену продавца берём массово (надёжнее, чем фильтр по одному артикулу)
-    pmap = seller_prices_map()
-    seller = pmap.get(str(nm)) or seller_price(nm)
+    pmap = prices_full_map()
+    pv = pmap.get(str(nm)) or {}
+    seller_price_before = pv.get("price")       # цена ДО скидки продавца
+    seller_price_after = pv.get("discounted")   # цена ПОСЛЕ скидки продавца
     out = {
         "nm_id": nm,
-        "public_price_size0": price0,
-        "public_extended": ext,
-        "public_basic_rub": basic,
-        "public_client_rub": client,
-        "seller_price_rub": seller,
-        "seller_prices_count": len(pmap),  # сколько цен отдал Prices API
+        "public_client_rub": client,            # цена покупателя (с СПП)
+        "seller_price_before_discount": seller_price_before,
+        "seller_price_after_discount": seller_price_after,
+        "seller_prices_count": len(pmap),
+        "SPP_BASE": SPP_BASE,
     }
-    if basic and client and basic > 0:
-        out["spp_from_basic_pct"] = round((basic - client) / basic * 100, 1)
-    if seller and client and seller > 0:
-        out["spp_from_seller_pct"] = round((seller - client) / seller * 100, 1)
+    if seller_price_before and client:
+        out["spp_from_price_before"] = round(
+            (seller_price_before - client) / seller_price_before * 100, 1)
+    if seller_price_after and client:
+        out["spp_from_price_after"] = round(
+            (seller_price_after - client) / seller_price_after * 100, 1)
     return out
 
 
