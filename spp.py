@@ -11,7 +11,9 @@
 import os
 import json
 import time
+import httpx
 import wb_public
+import checklist
 
 # Порог изменения СПП в процентных пунктах для уведомления
 SPP_THRESHOLD = float(os.environ.get("SPP_THRESHOLD", "1.5"))
@@ -58,6 +60,49 @@ def spp_for(nm_id):
         "client": round(client, 2),
         "spp": round((basic - client) / basic * 100.0, 1),
     }
+
+
+def seller_price(nm):
+    """Цена продавца (после его скидки) по nmID из Prices API WB, ₽ или None.
+    Это база для честной СПП (СПП = скидка WB от цены продавца)."""
+    try:
+        r = httpx.get(
+            f"{checklist.PRICES_API}/api/v2/list/goods/filter",
+            headers={"Authorization": checklist.WB_PRICES_TOKEN},
+            params={"limit": 10, "offset": 0, "filterNmID": nm}, timeout=20,
+        )
+        goods = (r.json().get("data") or {}).get("listGoods") or []
+        for g in goods:
+            if str(g.get("nmID")) == str(nm):
+                sizes = g.get("sizes") or []
+                if sizes:
+                    return sizes[0].get("discountedPrice") or sizes[0].get("price")
+    except Exception as e:
+        print(f"СПП: seller_price {nm} ошибка {e}")
+    return None
+
+
+def debug_full(nm):
+    """Полная диагностика по одному товару: все цены и варианты расчёта СПП."""
+    prod = wb_public.fetch_detail(nm)
+    price0 = ((prod.get("sizes") or [{}])[0].get("price")
+              if isinstance(prod, dict) else None)
+    ext = prod.get("extended") if isinstance(prod, dict) else None
+    basic, client = _extract_basic_client(prod)
+    seller = seller_price(nm)
+    out = {
+        "nm_id": nm,
+        "public_price_size0": price0,
+        "public_extended": ext,
+        "public_basic_rub": basic,
+        "public_client_rub": client,
+        "seller_price_rub": seller,
+    }
+    if basic and client and basic > 0:
+        out["spp_from_basic_pct"] = round((basic - client) / basic * 100, 1)
+    if seller and client and seller > 0:
+        out["spp_from_seller_pct"] = round((seller - client) / seller * 100, 1)
+    return out
 
 
 def load_state():

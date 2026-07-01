@@ -912,14 +912,9 @@ def spp_debug():
                 print(f"СПП debug: поиск vendorCode {e}")
         if not resolved:
             return jsonify({"vendor_code": vendor, "error": "nmID не найден по артикулу"})
-        prod = wb_public.fetch_detail(resolved)
-        return jsonify({
-            "vendor_code": vendor,
-            "nm_id": resolved,
-            "spp": spp.spp_for(resolved),
-            "raw_price": ((prod.get("sizes") or [{}])[0].get("price")
-                          if isinstance(prod, dict) else None),
-        })
+        out = spp.debug_full(resolved)
+        out["vendor_code"] = vendor
+        return jsonify(out)
     out = []
     for it in _spp_products()[:10]:
         out.append(spp.spp_for(str(it["nm_id"])) or {"nm_id": it["nm_id"], "spp": None})
