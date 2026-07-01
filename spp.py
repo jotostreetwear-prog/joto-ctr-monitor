@@ -61,9 +61,10 @@ def compute_spp(seller, client):
     return round((seller - float(client)) / float(seller) * 100.0, 1)
 
 
-# Какую цену продавца брать за базу СПП: "price" (до скидки продавца) или
-# "discounted" (после). Эвирма считает от цены ДО скидки — по умолчанию "price".
-SPP_BASE = os.environ.get("SPP_BASE", "price").strip()
+# База СПП: "discounted" (цена продавца после его скидки — верное определение
+# СПП) или "price" (до скидки, = общая скидка от перечёркнутой). По умолчанию
+# "discounted".
+SPP_BASE = os.environ.get("SPP_BASE", "discounted").strip()
 
 
 def prices_full_map():
