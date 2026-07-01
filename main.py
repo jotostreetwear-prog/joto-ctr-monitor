@@ -892,14 +892,30 @@ def spp_create_chat():
 
 @app.route("/spp/debug", methods=["GET"])
 def spp_debug():
-    """Проверка источника СПП. /spp/debug?nm=NMID — по одному артикулу;
+    """Проверка источника СПП. /spp/debug?nm=NMID (числовой) или
+    /spp/debug?nm=J09010/черный (артикул продавца) — по одному товару;
     без параметра — по первым 10 товарам кабинета."""
     nm = request.args.get("nm")
     if nm:
-        prod = wb_public.fetch_detail(nm)
+        resolved, vendor = nm, None
+        if not str(nm).isdigit():
+            # это vendorCode — найдём nmID в карточках кабинета
+            vendor = nm
+            resolved = None
+            try:
+                for card in checklist._fetch_cards():
+                    if (card.get("vendorCode") or "").strip().lower() == nm.strip().lower():
+                        resolved = str(card.get("nmID"))
+                        break
+            except Exception as e:
+                print(f"СПП debug: поиск vendorCode {e}")
+        if not resolved:
+            return jsonify({"vendor_code": vendor, "error": "nmID не найден по артикулу"})
+        prod = wb_public.fetch_detail(resolved)
         return jsonify({
-            "nm_id": nm,
-            "spp": spp.spp_for(nm),
+            "vendor_code": vendor,
+            "nm_id": resolved,
+            "spp": spp.spp_for(resolved),
             "raw_price": ((prod.get("sizes") or [{}])[0].get("price")
                           if isinstance(prod, dict) else None),
         })
