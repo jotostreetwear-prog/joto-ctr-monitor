@@ -27,33 +27,6 @@ SPP_STATE = (
 )
 
 
-def _extract_basic_client(product):
-    """Возвращает (basic, client) в рублях из публичной карточки или (None, None).
-
-    basic  — цена без СПП (после скидки продавца);
-    client — итоговая цена с СПП (что платит покупатель).
-    Цены в публичном API WB — в копейках (×100).
-    """
-    if not isinstance(product, dict):
-        return None, None
-    for s in product.get("sizes") or []:
-        p = (s or {}).get("price") or {}
-        basic = p.get("basic")
-        client = p.get("product") or p.get("total")
-        if basic and client:
-            return basic / 100.0, client / 100.0
-    ext = product.get("extended") or {}
-    if ext.get("basicPriceU") and ext.get("clientPriceU"):
-        return ext["basicPriceU"] / 100.0, ext["clientPriceU"] / 100.0
-    return None, None
-
-
-def public_client_price(nm_id):
-    """Итоговая цена покупателя (с СПП) из публичной карточки, ₽ или None."""
-    _basic, client = _extract_basic_client(wb_public.fetch_detail(nm_id))
-    return client
-
-
 def compute_spp(seller, client):
     """СПП% = (цена продавца − цена покупателя) / цена продавца."""
     if not seller or not client or seller <= 0:
@@ -61,14 +34,13 @@ def compute_spp(seller, client):
     return round((seller - float(client)) / float(seller) * 100.0, 1)
 
 
-# База СПП: "discounted" (цена продавца после его скидки — верное определение
-# СПП) или "price" (до скидки, = общая скидка от перечёркнутой). По умолчанию
-# "discounted".
-SPP_BASE = os.environ.get("SPP_BASE", "discounted").strip()
+# WB-Кошелёк — доп. скидка сверх СПП, которую учитывает кабинет/Эвирма (в %).
+# Даёт точное совпадение с кабинетом. Настраивается переменной SPP_WALLET_PCT.
+SPP_WALLET_PCT = float(os.environ.get("SPP_WALLET_PCT", "2.5"))
 
 
 def prices_full_map():
-    """{nmID(str): {'price':.., 'discounted':..}} по всему кабинету (Prices API)."""
+    """{nmID(str): {sizeID(str): цена продавца после скидки ₽}} по всему кабинету."""
     out = {}
     headers = {"Authorization": checklist.WB_PRICES_TOKEN}
     offset = 0
@@ -88,12 +60,13 @@ def prices_full_map():
         if not goods:
             break
         for g in goods:
-            sizes = g.get("sizes") or []
+            sizes = {}
+            for s in g.get("sizes") or []:
+                dp = s.get("discountedPrice") or s.get("price")
+                if dp:
+                    sizes[str(s.get("sizeID"))] = dp
             if sizes:
-                out[str(g.get("nmID"))] = {
-                    "price": sizes[0].get("price"),
-                    "discounted": sizes[0].get("discountedPrice"),
-                }
+                out[str(g.get("nmID"))] = sizes
         if len(goods) < 1000:
             break
         offset += 1000
@@ -101,79 +74,62 @@ def prices_full_map():
     return out
 
 
-def seller_prices_map():
-    """{nmID(str): базовая цена продавца ₽ (по SPP_BASE)} по всему кабинету."""
-    out = {}
-    for nm, pv in prices_full_map().items():
-        base = pv.get("price") if SPP_BASE == "price" else pv.get("discounted")
-        base = base or pv.get("discounted") or pv.get("price")
-        if base:
-            out[nm] = base
-    return out
+def public_instock(nm_id):
+    """(sizeID, цена покупателя ₽) для размера В НАЛИЧИИ из публичной карточки WB.
+    Кабинет считает СПП по цене товара, который реально продаётся."""
+    prod = wb_public.fetch_detail(nm_id)
+    if not isinstance(prod, dict):
+        return None, None
+    for s in prod.get("sizes") or []:
+        p = (s or {}).get("price")
+        if isinstance(p, dict) and p.get("product"):
+            return str(s.get("optionId")), p["product"] / 100.0
+    return None, None
 
 
-def spp_for(nm_id, seller=None):
-    """СПП по одному артикулу: {nm_id, seller, client, spp} или None.
-    Если seller не передан — берём из Prices API (массово)."""
-    if seller is None:
-        seller = seller_prices_map().get(str(nm_id))
-    client = public_client_price(nm_id)
-    val = compute_spp(seller, client)
+def spp_for(nm_id, sizes=None):
+    """СПП по артикулу как в кабинете: база — цена продавца ТОГО ЖЕ размера,
+    что в продаже; цена покупателя — с учётом WB-Кошелька.
+    Возвращает {nm_id, seller, client, spp} или None. sizes — {sizeID: цена}."""
+    if sizes is None:
+        sizes = prices_full_map().get(str(nm_id)) or {}
+    if not sizes:
+        return None
+    size_id, client = public_instock(nm_id)
+    if client is None:
+        return None
+    base = sizes.get(size_id) or min(sizes.values())  # цена того же размера
+    client_adj = client * (1 - SPP_WALLET_PCT / 100.0)  # учёт WB-Кошелька
+    val = compute_spp(base, client_adj)
     if val is None:
         return None
     return {
         "nm_id": nm_id,
-        "seller": round(float(seller), 2),
-        "client": round(float(client), 2),
+        "seller": round(float(base), 2),
+        "client": round(client_adj, 2),
         "spp": val,
     }
 
 
-def seller_price(nm):
-    """Цена продавца (после его скидки) по nmID из Prices API WB, ₽ или None.
-    Это база для честной СПП (СПП = скидка WB от цены продавца)."""
-    try:
-        r = httpx.get(
-            f"{checklist.PRICES_API}/api/v2/list/goods/filter",
-            headers={"Authorization": checklist.WB_PRICES_TOKEN},
-            params={"limit": 10, "offset": 0, "filterNmID": nm}, timeout=20,
-        )
-        goods = (r.json().get("data") or {}).get("listGoods") or []
-        for g in goods:
-            if str(g.get("nmID")) == str(nm):
-                sizes = g.get("sizes") or []
-                if sizes:
-                    return sizes[0].get("discountedPrice") or sizes[0].get("price")
-    except Exception as e:
-        print(f"СПП: seller_price {nm} ошибка {e}")
-    return None
-
-
 def debug_full(nm):
-    """Полная диагностика по одному товару: все цены и варианты расчёта СПП."""
-    prod = wb_public.fetch_detail(nm)
-    price0 = ((prod.get("sizes") or [{}])[0].get("price")
-              if isinstance(prod, dict) else None)
-    ext = prod.get("extended") if isinstance(prod, dict) else None
-    basic, client = _extract_basic_client(prod)
+    """Диагностика по товару: сопоставление размера, цены и итоговая СПП."""
     pmap = prices_full_map()
-    pv = pmap.get(str(nm)) or {}
-    seller_price_before = pv.get("price")       # цена ДО скидки продавца
-    seller_price_after = pv.get("discounted")   # цена ПОСЛЕ скидки продавца
+    sizes = pmap.get(str(nm)) or {}
+    size_id, client = public_instock(nm)
+    base = sizes.get(size_id) or (min(sizes.values()) if sizes else None)
     out = {
         "nm_id": nm,
-        "public_client_rub": client,            # цена покупателя (с СПП)
-        "seller_price_before_discount": seller_price_before,
-        "seller_price_after_discount": seller_price_after,
-        "seller_prices_count": len(pmap),
-        "SPP_BASE": SPP_BASE,
+        "size_id_in_stock": size_id,
+        "seller_price_same_size": base,
+        "client_no_wallet": client,
+        "wallet_pct": SPP_WALLET_PCT,
+        "all_sizes_prices": sizes,
+        "prices_count": len(pmap),
     }
-    if seller_price_before and client:
-        out["spp_from_price_before"] = round(
-            (seller_price_before - client) / seller_price_before * 100, 1)
-    if seller_price_after and client:
-        out["spp_from_price_after"] = round(
-            (seller_price_after - client) / seller_price_after * 100, 1)
+    res = spp_for(nm, sizes=sizes)
+    if res:
+        out["client_with_wallet"] = res["client"]
+        out["spp"] = res["spp"]
     return out
 
 
@@ -244,13 +200,13 @@ def check_changes(products, seed=False):
     где |delta| >= SPP_THRESHOLD. seed=True — только запомнить, без изменений.
     """
     state = load_state()
-    prices = seller_prices_map()  # цены продавца по всему кабинету — один раз
+    prices = prices_full_map()  # цены продавца по размерам — один раз
     changes = []
     for it in products:
         nm = str(it.get("nm_id") or it.get("nmID") or "")
         if not nm:
             continue
-        cur = spp_for(nm, seller=prices.get(nm))
+        cur = spp_for(nm, sizes=prices.get(nm))
         time.sleep(0.15)  # бережём публичный API WB
         if cur is None:
             continue
