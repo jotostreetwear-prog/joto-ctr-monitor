@@ -765,11 +765,12 @@ def create_daily_checklist(force=False):
     fields = {
         "TITLE": title,
         "RESPONSIBLE_ID": DAILY_CHECKLIST_USER_ID,
+        # Постановщик = сама Татьяна: тогда у неё полные права на задачу и
+        # чек-лист (может добавлять/удалять пункты сама).
+        "CREATED_BY": DAILY_CHECKLIST_USER_ID,
         # Крайний срок — конец рабочего дня СЕГОДНЯ по МСК (по умолчанию 18:00).
         "DEADLINE": now.strftime("%Y-%m-%d") + f"T{DAILY_CHECKLIST_DEADLINE}:00+03:00",
     }
-    if JOTO_BOT_USER_ID:
-        fields["CREATED_BY"] = JOTO_BOT_USER_ID  # постановщик = бот Joto
     res, err = _b24_call("tasks.task.add", {"fields": fields})
     task_id = None
     if isinstance(res, dict):
