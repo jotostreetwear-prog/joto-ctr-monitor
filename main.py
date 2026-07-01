@@ -866,13 +866,25 @@ def check_spp(seed=False):
     if not SPP_CHAT_ID:
         print("СПП: не задан SPP_CHAT_ID — некуда слать")
         return {"ok": False, "error": "no_chat", "changes": len(changes)}
-    lines = ["📊 *Изменение СПП:*", ""]
+    lines = ["📊 *Изменение СПП* — от бота JOTO:", ""]
     for c in changes:
         arrow = "🔼" if c["delta"] > 0 else "🔽"
         sign = "+" if c["delta"] > 0 else ""
         lines.append(
-            f"{arrow} {c['name']} (nm {c['nm_id']}): "
-            f"{c['old']}% → {c['new']}% ({sign}{c['delta']} п.п.)")
+            f"{arrow} *{c['name']}* (nm {c['nm_id']})\n"
+            f"   СПП {c['old']}% → {c['new']}% ({sign}{c['delta']} п.п.)")
+        # влияние на цену покупателя, ₽
+        oc, nc = c.get("old_client"), c.get("new_client")
+        if oc and nc:
+            diff = int(round(nc - oc))
+            if diff > 0:
+                lines.append(f"   💵 Покупатель платит на ~{diff} ₽ больше "
+                             f"({int(oc)} → {int(nc)} ₽)")
+            elif diff < 0:
+                lines.append(f"   💵 Покупатель платит на ~{abs(diff)} ₽ меньше "
+                             f"({int(oc)} → {int(nc)} ₽)")
+        lines.append(f"   {spp.recommendation(c['delta'])}")
+        lines.append("")
     for part in _split_for_bitrix("\n".join(lines)):
         send_b24_message(f"chat{SPP_CHAT_ID}", part, from_bot=True)
         time.sleep(0.3)
@@ -976,10 +988,17 @@ def spp_test():
     """Отправить в чат СПП тестовое уведомление (проверка доставки)."""
     if not SPP_CHAT_ID:
         return jsonify({"ok": False, "error": "не задан SPP_CHAT_ID"})
-    msg = ("📊 *Изменение СПП* (тест):\n\n"
-           "🔽 Пример товара (nm 249418149): 41.7% → 37.5% (−4.2 п.п.)\n"
-           "🔼 Другой товар (nm 246843867): 20.0% → 24.0% (+4.0 п.п.)\n\n"
-           "_Тестовое сообщение — проверка чата СПП._")
+    msg = (
+        "📊 *Изменение СПП* — от бота JOTO (тест):\n\n"
+        "🔽 *Джинсы багги* (nm 311487511)\n"
+        "   СПП 43.7% → 39.7% (−4.0 п.п.)\n"
+        "   💵 Покупатель платит на ~86 ₽ больше (1217 → 1303 ₽)\n"
+        f"   {spp.recommendation(-4.0)}\n\n"
+        "🔼 *Худи с начёсом* (nm 249434119)\n"
+        "   СПП 29.0% → 33.0% (+4.0 п.п.)\n"
+        "   💵 Покупатель платит на ~158 ₽ меньше (2810 → 2652 ₽)\n"
+        f"   {spp.recommendation(4.0)}\n\n"
+        "_Тестовое сообщение — проверка чата СПП._")
     status, body = send_b24_message(f"chat{SPP_CHAT_ID}", msg, from_bot=True)
     return jsonify({"ok": status == 200, "chat_id": SPP_CHAT_ID,
                     "bitrix_status": status, "bitrix_response": body})

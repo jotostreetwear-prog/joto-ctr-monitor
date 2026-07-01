@@ -218,12 +218,29 @@ def check_changes(products, seed=False):
             continue
         delta = round(new_spp - old_spp, 1)
         if abs(delta) >= SPP_THRESHOLD:
+            seller = cur.get("seller") or 0
+            new_client = cur.get("client") or 0
+            old_client = round(seller * (1 - old_spp / 100.0), 0) if seller else 0
             changes.append({
                 "nm_id": nm,
                 "name": it.get("name") or nm,
                 "old": old_spp,
                 "new": new_spp,
                 "delta": delta,
+                "seller": seller,
+                "old_client": old_client,
+                "new_client": round(new_client, 0),
             })
     save_state(state)
     return changes
+
+
+def recommendation(delta):
+    """Совет по изменению СПП. delta < 0 — СПП упала (цена для покупателя выросла)."""
+    if delta <= 0:
+        return ("⚠️ Цена для покупателя выросла — возможен спад заказов. "
+                "Совет: снизить свою цену/скидку продавца или зайти в акцию, "
+                "чтобы удержать итоговую цену; либо усилить рекламу.")
+    return ("✅ Цена для покупателя упала (за счёт WB) — товар стал привлекательнее. "
+            "Совет: усилить рекламу/поднять ставки для роста заказов, "
+            "либо аккуратно поднять свою цену, сохранив привлекательность.")
