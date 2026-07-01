@@ -15,8 +15,8 @@ import httpx
 import wb_public
 import checklist
 
-# Порог изменения СПП в процентных пунктах для уведомления
-SPP_THRESHOLD = float(os.environ.get("SPP_THRESHOLD", "1.5"))
+# Порог изменения СПП в процентных пунктах для уведомления (по умолчанию 3)
+SPP_THRESHOLD = float(os.environ.get("SPP_THRESHOLD", "3"))
 
 _VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
 SPP_STATE = (
