@@ -13,6 +13,7 @@ import vision
 import competitors
 import vacations
 import meetings
+import spp
 
 app = Flask(__name__)
 
@@ -88,6 +89,12 @@ DAILY_CHECKLIST_ADD_MEETINGS = os.environ.get(
 JOTO_BOT_USER_ID = os.environ.get("JOTO_BOT_USER_ID", "").strip()
 # Крайний срок задачи-чеклиста — время окончания в МСК (по умолчанию 18:00).
 DAILY_CHECKLIST_DEADLINE = os.environ.get("DAILY_CHECKLIST_DEADLINE", "18:00").strip()
+
+# Чат СПП: id чата Битрикс, куда шлём уведомления об изменении СПП, и состав
+# участников при создании чата (по умолчанию Татьяна + бот Joto).
+SPP_CHAT_ID = os.environ.get("SPP_CHAT_ID", "").strip()
+SPP_CHAT_USERS = [v.strip() for v in re.split(
+    r"[;,]", os.environ.get("SPP_CHAT_USERS", TATIANA_USER_ID)) if v.strip()]
 DAILY_CHECKLIST_WEEKDAYS_ONLY = os.environ.get(
     "DAILY_CHECKLIST_WEEKDAYS_ONLY", "1").strip().lower() in ("1", "true", "yes", "да")
 _DCHK_VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
@@ -793,6 +800,113 @@ def daily_checklist_create():
     return jsonify(result)
 
 
+# ===================== МОНИТОРИНГ СПП =====================
+
+def create_spp_chat():
+    """Создаёт групповой чат «СПП» в Битрикс. Возвращает (chat_id, error).
+    В чат добавляется бот Joto (чтобы мог писать) и участники SPP_CHAT_USERS."""
+    users = list(SPP_CHAT_USERS)
+    if JOTO_BOT_USER_ID and JOTO_BOT_USER_ID not in users:
+        users.append(JOTO_BOT_USER_ID)
+    res, err = _b24_call("im.chat.add", {
+        "TYPE": "CHAT",
+        "TITLE": "СПП",
+        "DESCRIPTION": f"Уведомления об изменении СПП (порог {spp.SPP_THRESHOLD} п.п.)",
+        "COLOR": "AZURE",
+        "USERS": users,
+    })
+    chat_id = None
+    if isinstance(res, dict):
+        chat_id = res.get("CHAT_ID") or res.get("chat_id") or res.get("ID")
+    elif res is not None:
+        chat_id = res
+    return chat_id, err
+
+
+def _spp_products():
+    """Список товаров {nm_id, name} из кэша чек-листа."""
+    data = checklist.get_cached()
+    items = data.get("items") or []
+    if not items:
+        data = checklist.compute_checklist()
+        items = data.get("items") or []
+    return [{"nm_id": i.get("nm_id"), "name": i.get("name")} for i in items]
+
+
+def check_spp(seed=False):
+    """Считает СПП по всем товарам, сравнивает с прошлым и шлёт в чат СПП
+    изменения на SPP_THRESHOLD п.п. и больше. seed=True — только запомнить."""
+    print(f"СПП: проверка {datetime.now()}")
+    if not WB_API_TOKEN:
+        print("СПП: нет WB_API_TOKEN")
+        return {"ok": False, "error": "no_wb_token"}
+    products = _spp_products()
+    if not products:
+        print("СПП: нет товаров")
+        return {"ok": True, "products": 0}
+    changes = spp.check_changes(products, seed=seed)
+    if seed:
+        print(f"СПП: запомнил {len(products)} товаров (первый запуск)")
+        return {"ok": True, "seeded": len(products)}
+    if not changes:
+        print("СПП: изменений нет")
+        return {"ok": True, "changes": 0}
+    if not SPP_CHAT_ID:
+        print("СПП: не задан SPP_CHAT_ID — некуда слать")
+        return {"ok": False, "error": "no_chat", "changes": len(changes)}
+    lines = ["📊 *Изменение СПП:*", ""]
+    for c in changes:
+        arrow = "🔼" if c["delta"] > 0 else "🔽"
+        sign = "+" if c["delta"] > 0 else ""
+        lines.append(
+            f"{arrow} {c['name']} (nm {c['nm_id']}): "
+            f"{c['old']}% → {c['new']}% ({sign}{c['delta']} п.п.)")
+    for part in _split_for_bitrix("\n".join(lines)):
+        send_b24_message(f"chat{SPP_CHAT_ID}", part, from_bot=True)
+        time.sleep(0.3)
+    print(f"СПП: отправлено изменений {len(changes)}")
+    return {"ok": True, "changes": len(changes)}
+
+
+@app.route("/spp/create-chat", methods=["GET"])
+def spp_create_chat():
+    chat_id, err = create_spp_chat()
+    return jsonify({
+        "ok": bool(chat_id),
+        "chat_id": chat_id,
+        "error": err,
+        "hint": "Впишите chat_id в переменную SPP_CHAT_ID на Railway",
+    })
+
+
+@app.route("/spp/debug", methods=["GET"])
+def spp_debug():
+    """Проверка источника СПП. /spp/debug?nm=NMID — по одному артикулу;
+    без параметра — по первым 10 товарам кабинета."""
+    nm = request.args.get("nm")
+    if nm:
+        prod = wb_public.fetch_detail(nm)
+        return jsonify({
+            "nm_id": nm,
+            "spp": spp.spp_for(nm),
+            "raw_price": ((prod.get("sizes") or [{}])[0].get("price")
+                          if isinstance(prod, dict) else None),
+        })
+    out = []
+    for it in _spp_products()[:10]:
+        out.append(spp.spp_for(str(it["nm_id"])) or {"nm_id": it["nm_id"], "spp": None})
+        time.sleep(0.15)
+    return jsonify({"threshold_pp": spp.SPP_THRESHOLD, "chat_id": SPP_CHAT_ID or "(не задан)", "items": out})
+
+
+@app.route("/spp/check-now", methods=["GET"])
+def spp_check_now():
+    # /spp/check-now?seed=1 — только запомнить текущие СПП (первый запуск)
+    seed = request.args.get("seed") in ("1", "true", "yes")
+    threading.Thread(target=check_spp, kwargs={"seed": seed}, daemon=True).start()
+    return jsonify({"ok": True, "message": "Проверка СПП запущена", "seed": seed})
+
+
 @app.route("/meetings/check-now", methods=["GET"])
 def meetings_check_now():
     # /meetings/check-now?force=1 — разослать сразу всем, игнорируя время и дубли
@@ -1129,6 +1243,9 @@ def run_scheduler():
     # поймать момент «за N минут до начала» (по умолчанию каждые 5 минут)
     meet_min = int(os.environ.get("MEETING_CHECK_MINUTES", "5"))
     schedule.every(meet_min).minutes.do(check_meetings)
+    # Мониторинг СПП — каждые N минут (по умолчанию 60)
+    spp_min = int(os.environ.get("SPP_CHECK_MINUTES", "60"))
+    schedule.every(spp_min).minutes.do(check_spp)
     print(f"Планировщик запущен — CTR в 09:00 МСК, бюджет каждые 30 мин, "
           f"чек-лист: сводка в 10:00 МСК, авто-пересчёт каждые {refresh_h} ч, "
           f"отпуска каждые {vac_min} мин, созвоны каждые {meet_min} мин")
