@@ -118,7 +118,8 @@ def debug_full(nm):
     ext = prod.get("extended") if isinstance(prod, dict) else None
     basic, client = _extract_basic_client(prod)
     # цену продавца берём массово (надёжнее, чем фильтр по одному артикулу)
-    seller = seller_prices_map().get(str(nm)) or seller_price(nm)
+    pmap = seller_prices_map()
+    seller = pmap.get(str(nm)) or seller_price(nm)
     out = {
         "nm_id": nm,
         "public_price_size0": price0,
@@ -126,6 +127,7 @@ def debug_full(nm):
         "public_basic_rub": basic,
         "public_client_rub": client,
         "seller_price_rub": seller,
+        "seller_prices_count": len(pmap),  # сколько цен отдал Prices API
     }
     if basic and client and basic > 0:
         out["spp_from_basic_pct"] = round((basic - client) / basic * 100, 1)
