@@ -95,7 +95,7 @@ DAILY_CHECKLIST_DEADLINE = os.environ.get("DAILY_CHECKLIST_DEADLINE", "18:00").s
 # участников при создании чата (по умолчанию Татьяна + бот Joto).
 SPP_CHAT_ID = os.environ.get("SPP_CHAT_ID", "").strip()
 SPP_CHAT_USERS = [v.strip() for v in re.split(
-    r"[;,]", os.environ.get("SPP_CHAT_USERS", TATIANA_USER_ID)) if v.strip()]
+    r"[;,]", os.environ.get("SPP_CHAT_USERS", f"{TATIANA_USER_ID};226")) if v.strip()]
 DAILY_CHECKLIST_WEEKDAYS_ONLY = os.environ.get(
     "DAILY_CHECKLIST_WEEKDAYS_ONLY", "1").strip().lower() in ("1", "true", "yes", "да")
 _DCHK_VOL = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
@@ -920,6 +920,20 @@ def spp_debug():
         out.append(spp.spp_for(str(it["nm_id"])) or {"nm_id": it["nm_id"], "spp": None})
         time.sleep(0.15)
     return jsonify({"threshold_pp": spp.SPP_THRESHOLD, "chat_id": SPP_CHAT_ID or "(не задан)", "items": out})
+
+
+@app.route("/spp/chat-add", methods=["GET"])
+def spp_chat_add():
+    """Добавить участников в чат СПП. /spp/chat-add?users=226;232 (id через ; или ,).
+    chat берётся из SPP_CHAT_ID или параметра ?chat=."""
+    chat = request.args.get("chat") or SPP_CHAT_ID
+    users = [u.strip() for u in re.split(r"[;,]", request.args.get("users", ""))
+             if u.strip()]
+    if not chat or not users:
+        return jsonify({"ok": False, "error": "нужны ?chat=<id>&users=226;232"})
+    res, err = _b24_call("im.chat.user.add", {"CHAT_ID": chat, "USERS": users})
+    return jsonify({"ok": err is None, "chat_id": chat, "added": users,
+                    "result": res, "error": err})
 
 
 @app.route("/spp/check-now", methods=["GET"])
