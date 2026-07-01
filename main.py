@@ -936,6 +936,32 @@ def spp_chat_add():
                     "result": res, "error": err})
 
 
+@app.route("/spp/values", methods=["GET"])
+def spp_values():
+    """Реальные СПП по всем товарам (из сохранённого состояния после seed/проверки)."""
+    state = spp.load_state()
+    # имена товаров (одним запросом карточек)
+    names = {}
+    try:
+        names = {str(p["nm_id"]): p.get("name") for p in _spp_products()}
+    except Exception:
+        pass
+    items = []
+    for nm, v in state.items():
+        if not isinstance(v, dict):
+            continue
+        items.append({
+            "nm_id": nm,
+            "name": names.get(str(nm), ""),
+            "spp": v.get("spp"),
+            "seller": v.get("seller"),
+            "client": v.get("client"),
+        })
+    items.sort(key=lambda x: (x["spp"] is None, -(x["spp"] or 0)))
+    return jsonify({"count": len(items), "threshold_pp": spp.SPP_THRESHOLD,
+                    "items": items})
+
+
 @app.route("/spp/test", methods=["GET"])
 def spp_test():
     """Отправить в чат СПП тестовое уведомление (проверка доставки)."""
