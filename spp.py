@@ -48,17 +48,45 @@ def _extract_basic_client(product):
     return None, None
 
 
-def spp_for(nm_id):
-    """СПП по одному артикулу: {nm_id, basic, client, spp} или None."""
-    prod = wb_public.fetch_detail(nm_id)
-    basic, client = _extract_basic_client(prod)
-    if not basic or not client or basic <= 0:
+def public_client_price(nm_id):
+    """Итоговая цена покупателя (с СПП) из публичной карточки, ₽ или None."""
+    _basic, client = _extract_basic_client(wb_public.fetch_detail(nm_id))
+    return client
+
+
+def compute_spp(seller, client):
+    """СПП% = (цена продавца − цена покупателя) / цена продавца."""
+    if not seller or not client or seller <= 0:
+        return None
+    return round((seller - float(client)) / float(seller) * 100.0, 1)
+
+
+def seller_prices_map():
+    """{nmID(str): цена продавца ₽} по всему кабинету (Prices API WB)."""
+    out = {}
+    try:
+        for nm, price in checklist._fetch_prices().items():
+            if price:
+                out[str(nm)] = price
+    except Exception as e:
+        print(f"СПП: цены продавца не получены: {e}")
+    return out
+
+
+def spp_for(nm_id, seller=None):
+    """СПП по одному артикулу: {nm_id, seller, client, spp} или None.
+    Если seller не передан — берём из Prices API (массово)."""
+    if seller is None:
+        seller = seller_prices_map().get(str(nm_id))
+    client = public_client_price(nm_id)
+    val = compute_spp(seller, client)
+    if val is None:
         return None
     return {
         "nm_id": nm_id,
-        "basic": round(basic, 2),
-        "client": round(client, 2),
-        "spp": round((basic - client) / basic * 100.0, 1),
+        "seller": round(float(seller), 2),
+        "client": round(float(client), 2),
+        "spp": val,
     }
 
 
@@ -89,7 +117,8 @@ def debug_full(nm):
               if isinstance(prod, dict) else None)
     ext = prod.get("extended") if isinstance(prod, dict) else None
     basic, client = _extract_basic_client(prod)
-    seller = seller_price(nm)
+    # цену продавца берём массово (надёжнее, чем фильтр по одному артикулу)
+    seller = seller_prices_map().get(str(nm)) or seller_price(nm)
     out = {
         "nm_id": nm,
         "public_price_size0": price0,
@@ -134,19 +163,20 @@ def check_changes(products, seed=False):
     где |delta| >= SPP_THRESHOLD. seed=True — только запомнить, без изменений.
     """
     state = load_state()
+    prices = seller_prices_map()  # цены продавца по всему кабинету — один раз
     changes = []
     for it in products:
         nm = str(it.get("nm_id") or it.get("nmID") or "")
         if not nm:
             continue
-        cur = spp_for(nm)
+        cur = spp_for(nm, seller=prices.get(nm))
         time.sleep(0.15)  # бережём публичный API WB
         if cur is None:
             continue
         new_spp = cur["spp"]
         prev = state.get(nm)
         old_spp = prev.get("spp") if isinstance(prev, dict) else prev
-        state[nm] = {"spp": new_spp, "client": cur["client"], "basic": cur["basic"]}
+        state[nm] = {"spp": new_spp, "client": cur["client"], "seller": cur["seller"]}
         if seed or old_spp is None:
             continue
         delta = round(new_spp - old_spp, 1)
