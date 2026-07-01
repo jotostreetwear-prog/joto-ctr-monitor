@@ -824,13 +824,24 @@ def create_spp_chat():
 
 
 def _spp_products():
-    """Список товаров {nm_id, name} из кэша чек-листа."""
+    """Список товаров {nm_id, name}. Берём из кэша чек-листа, а если он пуст —
+    напрямую из карточек WB (не ждём медленного пересчёта чек-листа)."""
     data = checklist.get_cached()
     items = data.get("items") or []
-    if not items:
-        data = checklist.compute_checklist()
-        items = data.get("items") or []
-    return [{"nm_id": i.get("nm_id"), "name": i.get("name")} for i in items]
+    if items:
+        return [{"nm_id": i.get("nm_id"), "name": i.get("name")} for i in items]
+    # запасной путь — карточки напрямую из Content API
+    products = []
+    try:
+        for card in checklist._fetch_cards():
+            nm = card.get("nmID")
+            if not nm or checklist._is_test_card(card):
+                continue
+            name = card.get("title") or card.get("vendorCode") or str(nm)
+            products.append({"nm_id": nm, "name": name})
+    except Exception as e:
+        print(f"СПП: не удалось получить карточки напрямую: {e}")
+    return products
 
 
 def check_spp(seed=False):
