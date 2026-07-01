@@ -936,6 +936,20 @@ def spp_chat_add():
                     "result": res, "error": err})
 
 
+@app.route("/spp/test", methods=["GET"])
+def spp_test():
+    """Отправить в чат СПП тестовое уведомление (проверка доставки)."""
+    if not SPP_CHAT_ID:
+        return jsonify({"ok": False, "error": "не задан SPP_CHAT_ID"})
+    msg = ("📊 *Изменение СПП* (тест):\n\n"
+           "🔽 Пример товара (nm 249418149): 41.7% → 37.5% (−4.2 п.п.)\n"
+           "🔼 Другой товар (nm 246843867): 20.0% → 24.0% (+4.0 п.п.)\n\n"
+           "_Тестовое сообщение — проверка чата СПП._")
+    status, body = send_b24_message(f"chat{SPP_CHAT_ID}", msg, from_bot=True)
+    return jsonify({"ok": status == 200, "chat_id": SPP_CHAT_ID,
+                    "bitrix_status": status, "bitrix_response": body})
+
+
 @app.route("/spp/check-now", methods=["GET"])
 def spp_check_now():
     # /spp/check-now?seed=1 — только запомнить текущие СПП (первый запуск)
