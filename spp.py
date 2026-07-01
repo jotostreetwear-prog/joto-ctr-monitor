@@ -177,6 +177,44 @@ def debug_full(nm):
     return out
 
 
+def raw_price_good(nm):
+    """Полный объект товара из Prices API WB (все поля, все размеры)."""
+    headers = {"Authorization": checklist.WB_PRICES_TOKEN}
+    offset = 0
+    while True:
+        try:
+            r = httpx.get(
+                f"{checklist.PRICES_API}/api/v2/list/goods/filter",
+                headers=headers, params={"limit": 1000, "offset": offset}, timeout=30,
+            )
+        except Exception as e:
+            return {"error": str(e)}
+        if r.status_code != 200:
+            return {"error": f"{r.status_code}: {r.text[:200]}"}
+        goods = (r.json().get("data") or {}).get("listGoods") or []
+        if not goods:
+            break
+        for g in goods:
+            if str(g.get("nmID")) == str(nm):
+                return g
+        if len(goods) < 1000:
+            break
+        offset += 1000
+        time.sleep(0.6)
+    return {"error": "nm не найден в Prices API"}
+
+
+def raw_dump(nm):
+    """Все сырые данные по товару — чтобы найти поле СПП."""
+    prod = wb_public.fetch_detail(nm)
+    return {
+        "nm_id": nm,
+        "prices_api_good": raw_price_good(nm),
+        "public_sizes": (prod.get("sizes") if isinstance(prod, dict) else None),
+        "public_extended": (prod.get("extended") if isinstance(prod, dict) else None),
+    }
+
+
 def load_state():
     try:
         with open(SPP_STATE, "r", encoding="utf-8") as f:

@@ -936,6 +936,15 @@ def spp_chat_add():
                     "result": res, "error": err})
 
 
+@app.route("/spp/raw", methods=["GET"])
+def spp_raw():
+    """Все сырые данные WB по товару (поиск поля СПП). /spp/raw?nm=311487511"""
+    nm = request.args.get("nm")
+    if not nm:
+        return jsonify({"error": "нужен ?nm=<nmID>"})
+    return jsonify(spp.raw_dump(nm))
+
+
 @app.route("/spp/values", methods=["GET"])
 def spp_values():
     """Реальные СПП по всем товарам (из сохранённого состояния после seed/проверки)."""
