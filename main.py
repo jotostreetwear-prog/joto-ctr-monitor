@@ -14,6 +14,7 @@ import competitors
 import vacations
 import meetings
 import spp
+import wb_public
 
 app = Flask(__name__)
 
